@@ -3,9 +3,275 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ShootingGame from './components/ShootingGame';
 import ShootingStars from './components/ShootingStars';
 import axios from 'axios';
-import { Trophy, Play, Home, RefreshCcw, Settings, X, LogOut, ChevronRight, Keyboard, Layers, Lock, Unlock, Skull, Link, Zap, Shield, Timer, Sliders, Check, Edit2, Loader2 } from 'lucide-react';
+import { Trophy, Play, Home, RefreshCcw, Settings, X, LogOut, ChevronRight, Keyboard, Layers, Lock, Unlock, Skull, Link, Zap, Shield, Timer, Sliders, Check, Edit2, Loader2, MessageSquare, Send, RotateCcw } from 'lucide-react';
 
 const API_URL = 'http://localhost:8000';
+
+// ──────────────────────────────────────────────
+const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enabledPowerUps }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  
+  const [messages, setMessages] = useState([
+    { role: 'aura', text: 'Neural link established. I am AURA — your tactical AI navigator. Ask me anything about Nebula Strike strategies, power-ups, or sector tactics, Pilot.' }
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const chatEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const widgetRef = useRef(null);
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (isOpen && widgetRef.current && !widgetRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  // Fetch sessions on load
+  useEffect(() => {
+    if (pilotId && isOpen) {
+        fetchSessions();
+    }
+  }, [pilotId, isOpen]);
+
+  const fetchSessions = async () => {
+      try {
+          const res = await axios.get(`${API_URL}/ai/sessions/${pilotId}`);
+          setSessions(res.data.sessions);
+          if (res.data.sessions.length > 0 && !currentSessionId) {
+              loadChat(res.data.sessions[0].session_id);
+          } else if (res.data.sessions.length === 0 && !currentSessionId) {
+              startNewChat();
+          }
+      } catch (e) {
+          console.error("Failed to load sessions", e);
+      }
+  };
+
+  const loadChat = async (sessionId) => {
+      setCurrentSessionId(sessionId);
+      setIsSidebarOpen(false);
+      try {
+          const res = await axios.get(`${API_URL}/ai/chat/${sessionId}`);
+          if (res.data.messages.length > 0) {
+              setMessages(res.data.messages);
+          } else {
+              setMessages([{ role: 'aura', text: 'Tactical session resumed. How can I assist, Pilot?' }]);
+          }
+      } catch (e) {
+          setMessages([{ role: 'aura', text: 'Error loading session data.' }]);
+      }
+  };
+
+  const startNewChat = async () => {
+      try {
+          const res = await axios.post(`${API_URL}/ai/chat/new`, { pilot_id: pilotId });
+          setCurrentSessionId(res.data.session_id);
+          setMessages([{ role: 'aura', text: 'New tactical session initialized. Standing by for queries.' }]);
+          setIsSidebarOpen(false);
+          fetchSessions();
+      } catch (e) {
+          console.error("Failed to create chat", e);
+      }
+  };
+
+  const deleteChat = async (e, sessionId) => {
+      e.stopPropagation();
+      try {
+          await axios.delete(`${API_URL}/ai/chat/${sessionId}`);
+          setSessions(prev => prev.filter(s => s.session_id !== sessionId));
+          if (currentSessionId === sessionId) {
+              setCurrentSessionId(null);
+              setMessages([{ role: 'aura', text: 'Session deleted.' }]);
+              startNewChat();
+          }
+      } catch (e) {
+          console.error("Failed to delete chat", e);
+      }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [isOpen, messages]);
+
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || isLoading || !currentSessionId) return;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text }]);
+    setIsLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/ai/chat`, {
+        pilot_id: pilotId,
+        session_id: currentSessionId,
+        message: text,
+        game_state: gameState,
+        current_level: currentLevel,
+        unlocked_levels: unlockedLevels,
+        powerups: enabledPowerUps
+      });
+      setMessages(prev => [...prev, { role: 'assistant', text: res.data.reply }]);
+      fetchSessions(); // Refresh list to catch title update
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', text: 'Neural link interference detected. Please check backend connection and retry.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+
+
+
+  return (
+    <div ref={widgetRef}>
+      {/* Floating Toggle Button */}
+      <button
+        onClick={() => setIsOpen(o => !o)}
+        className="fixed bottom-8 right-8 z-[500] w-16 h-16 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(0,242,255,0.4)] transition-all hover:scale-110 active:scale-95"
+        style={{ background: 'linear-gradient(135deg, #00f2ff, #7000ff)' }}
+        title="Chat with AURA"
+      >
+        <AnimatePresence mode="wait">
+          {isOpen
+            ? <motion.div key="x" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }}><X size={26} /></motion.div>
+            : <motion.div key="chat" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }}><MessageSquare size={26} /></motion.div>
+          }
+        </AnimatePresence>
+        {/* Pulse ring */}
+        <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{ background: '#00f2ff' }} />
+      </button>
+
+      {/* Chat Panel */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="fixed bottom-28 right-8 z-[499] w-[400px] flex flex-col rounded-3xl overflow-hidden shadow-[0_0_80px_rgba(0,242,255,0.2)] border border-white/10"
+            style={{ maxHeight: '70vh', background: 'rgba(5,5,5,0.97)', backdropFilter: 'blur(20px)' }}
+          >
+            {/* Sidebar for History */}
+            <AnimatePresence>
+                {isSidebarOpen && (
+                    <motion.div initial={{ x: -400 }} animate={{ x: 0 }} exit={{ x: -400 }} className="absolute inset-0 z-50 bg-black/95 backdrop-blur-3xl flex flex-col">
+                        <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
+                            <span className="font-black text-sm tracking-widest uppercase text-primary">Chat History</span>
+                            <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={16} /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                            <button onClick={startNewChat} className="w-full text-left p-3 rounded-xl border border-primary/20 hover:bg-primary/10 text-primary font-bold text-sm flex items-center gap-2 mb-4"><MessageSquare size={16}/> New Session</button>
+                            {sessions.map(s => (
+                                <div key={s.session_id} onClick={() => loadChat(s.session_id)} className={`w-full p-3 rounded-xl flex justify-between items-center cursor-pointer transition-colors ${currentSessionId === s.session_id ? 'bg-primary/20 border-primary/40' : 'bg-white/5 hover:bg-white/10'} border border-transparent`}>
+                                    <span className="text-sm truncate pr-2" style={{ maxWidth: '250px' }}>{s.title}</span>
+                                    <button onClick={(e) => deleteChat(e, s.session_id)} className="text-red-500 hover:text-red-400 p-1"><X size={14}/></button>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10" style={{ background: 'linear-gradient(135deg, rgba(0,242,255,0.1), rgba(112,0,255,0.1))' }}>
+              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-xl mr-1">
+                  <Layers size={18} />
+              </button>
+              <div className="relative">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-primary/50" style={{ background: 'linear-gradient(135deg,#00f2ff22,#7000ff22)' }}>
+                  <Layers size={18} className="text-primary" />
+                </div>
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-black" />
+              </div>
+              <div className="flex-1">
+                <div className="font-black text-white text-sm tracking-wider">AURA</div>
+                <div className="text-[10px] text-primary/60 font-mono uppercase tracking-widest">AI Navigator // Online</div>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ minHeight: '300px' }}>
+              {messages.map((msg, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`flex ${ msg.role === 'user' ? 'justify-end' : 'justify-start' } gap-2`}
+                >
+                  {(msg.role === 'assistant' || msg.role === 'aura') && (
+                    <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center mt-1" style={{ background: 'linear-gradient(135deg,#00f2ff33,#7000ff33)', border: '1px solid rgba(0,242,255,0.3)' }}>
+                      <Layers size={12} className="text-primary" />
+                    </div>
+                  )}
+                  <div
+                    className="max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed"
+                    style={{
+                      background: msg.role === 'user'
+                        ? 'linear-gradient(135deg, #7000ff, #00f2ff)'
+                        : 'rgba(255,255,255,0.06)',
+                      borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                      border: (msg.role === 'assistant' || msg.role === 'aura') ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                      color: 'rgba(255,255,255,0.9)',
+                    }}
+                  >
+                    {msg.text}
+                  </div>
+                </motion.div>
+              ))}
+              {isLoading && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: 'rgba(0,242,255,0.1)', border: '1px solid rgba(0,242,255,0.3)' }}>
+                    <Layers size={12} className="text-primary" />
+                  </div>
+                  <div className="flex gap-1 px-4 py-3 rounded-2xl" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    {[0, 0.2, 0.4].map((d, i) => (
+                      <motion.div key={i} animate={{ y: [0, -5, 0] }} transition={{ duration: 0.6, delay: d, repeat: Infinity }} className="w-2 h-2 rounded-full bg-primary" />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input */}
+            <div className="p-3 border-t border-white/10 flex gap-2">
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder="Ask AURA for tactical advice..."
+                className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-white/30 outline-none focus:border-primary/50 focus:bg-white/8 transition-all"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={isLoading || !input.trim()}
+                className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40 hover:scale-105 active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #00f2ff, #7000ff)' }}
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 
 const ModalWrapper = ({ isOpen, onClose, title, children, accentColor = "primary" }) => {
@@ -150,6 +416,15 @@ function App() {
       </div>
 
       {gameState !== 'PLAYING' && <ShootingStars />}
+
+      {/* AURA Chat Widget — visible on all screens */}
+      <AuraChatWidget 
+          pilotId={pilotId} 
+          gameState={gameState} 
+          currentLevel={currentLevel} 
+          unlockedLevels={unlockedLevels} 
+          enabledPowerUps={enabledPowerUps} 
+      />
 
       <AnimatePresence mode="wait">
         {gameState === 'LANDING' && (
