@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, RefreshCcw, Home, Settings, Pause, ChevronRight, Zap, Skull, ShieldAlert, X, Shield, Timer, Zap as RapidIcon, Layers } from 'lucide-react';
 
-const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps }) => {
+const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps, isDemoMode = false }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(100);
@@ -225,8 +225,9 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
 
       // FUEL CONSUMPTION
       const isMoving = keys[controls.left] || keys[controls.right] || keys[controls.up] || keys[controls.down];
-      // Slightly more balanced drain: 0.06 while moving, 0.02 idle
-      gameState.current.fuel -= isMoving ? 0.06 : 0.02;
+      if (!isDemoMode) {
+        gameState.current.fuel -= isMoving ? 0.06 : 0.02;
+      }
       
       if (gameState.current.fuel <= 0) {
           gameState.current.fuel = 0;
@@ -563,6 +564,26 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
   return (
     <div className={`relative w-full h-screen overflow-hidden ${isPaused ? '' : 'cursor-none'} bg-black font-sans`}>
       <canvas ref={canvasRef} className="block w-full h-full" />
+      
+      {isDemoMode && (
+        <div className="absolute top-0 left-0 right-0 z-[150] flex items-center justify-center py-3 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20 border-b border-primary/30 backdrop-blur-sm">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-2 h-2 rounded-full bg-primary animate-ping" />
+              <span className="text-primary font-black uppercase tracking-[0.4em] text-sm">Demo Mode</span>
+            </div>
+            <span className="text-gray-500 text-xs font-bold tracking-widest uppercase">·</span>
+            <span className="text-gray-400 text-xs font-bold tracking-widest uppercase">Use WASD + Space to play</span>
+            <span className="text-gray-500 text-xs font-bold tracking-widest uppercase">·</span>
+            <button
+              onClick={onQuit}
+              className="px-4 py-1.5 border border-red-500/30 text-red-400 text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-red-500/10 transition-colors"
+            >
+              ✕ Exit Demo
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className="absolute top-28 left-80 flex gap-4 z-[90] flex-wrap">
           <div className="glass-card p-3 flex items-center gap-2 text-primary border-primary/20"><ChevronRight size={14}/> Q: SNAP | E: LEASH</div>

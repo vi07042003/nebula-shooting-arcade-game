@@ -38,6 +38,9 @@ function App() {
   const [username, setUsername] = useState(localStorage.getItem('nebula_pilot') || 'Pilot_' + Math.floor(Math.random() * 1000));
   const [pilotId, setPilotId] = useState(localStorage.getItem('nebula_pilot_id') || 'id_' + Math.random().toString(36).substr(2, 9) + Date.now());
   const [showSettings, setShowSettings] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
+  const [currentDemoSlide, setCurrentDemoSlide] = useState(0);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [showPowerUpEdit, setShowPowerUpEdit] = useState(false);
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
@@ -49,6 +52,7 @@ function App() {
   const [enabledPowerUps, setEnabledPowerUps] = useState(JSON.parse(localStorage.getItem('nebula_powerups')) || ['shield', 'multishot', 'rapidfire', 'slowmo']);
   const [tempPowerUps, setTempPowerUps] = useState([]);
 
+  const [tempControls, setTempControls] = useState({});
   const [controls, setControls] = useState(JSON.parse(localStorage.getItem('nebula_controls')) || {
     up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', fire: 'Space'
   });
@@ -106,6 +110,11 @@ function App() {
   };
 
   const handleGameOver = async (score, won = false) => {
+    if (isDemoMode) {
+      setIsDemoMode(false);
+      setGameState('LANDING');
+      return;
+    }
     setFinalScore(score);
     if (won) {
       if (currentLevel === unlockedLevels && unlockedLevels < 20) setUnlockedLevels(prev => prev + 1);
@@ -120,8 +129,13 @@ function App() {
   };
 
   const startLevel = (lvl) => { setCurrentLevel(lvl); setGameState('PLAYING'); };
-  const updateControl = (action, key) => { setControls(prev => ({ ...prev, [action]: key })); };
+  const updateControl = (action, key) => { setTempControls(prev => ({ ...prev, [action]: key })); };
   const isBossLevel = (lvl) => lvl % 5 === 0;
+
+  const openSettings = () => {
+    setTempControls({ ...controls });
+    setShowSettings(true);
+  };
 
   const openPowerUpEditor = () => {
     setTempPowerUps([...enabledPowerUps]);
@@ -220,10 +234,23 @@ function App() {
               </AnimatePresence>
             </div>
 
-            <div className="absolute top-8 right-8 flex gap-4">
-              <button title="Simulation Config" onClick={openPowerUpEditor} className="p-4 glass-card hover:bg-white/10 transition-all border-white/5 text-accent"><Zap size={28} /></button>
-              <button title="Tactical Settings" onClick={() => setShowSettings(true)} className="p-4 glass-card hover:bg-white/10 transition-all border-white/5"><Settings size={28} /></button>
-              <button title="Power Down" onClick={() => setShowQuitConfirm(true)} className="p-4 glass-card hover:bg-red-500/20 text-red-500 transition-all border-red-500/10 hover:border-red-500/50"><LogOut size={28} /></button>
+            <div className="absolute top-8 right-8 flex gap-3">
+              <button title="Training Simulation" onClick={() => { setShowDemo(true); setCurrentDemoSlide(0); }} className="px-5 py-3 glass-card hover:bg-white/10 transition-all border-primary/20 text-primary flex items-center gap-2.5 shadow-[0_0_15px_rgba(0,242,255,0.08)]">
+                <Play size={18} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Demo</span>
+              </button>
+              <button title="Simulation Config" onClick={openPowerUpEditor} className="px-5 py-3 glass-card hover:bg-white/10 transition-all border-accent/20 text-accent flex items-center gap-2.5">
+                <Zap size={18} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Power-Ups</span>
+              </button>
+              <button title="Tactical Settings" onClick={openSettings} className="px-5 py-3 glass-card hover:bg-white/10 transition-all border-white/5 text-gray-300 flex items-center gap-2.5">
+                <Settings size={18} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Settings</span>
+              </button>
+              <button title="Power Down" onClick={() => setShowQuitConfirm(true)} className="px-5 py-3 glass-card hover:bg-red-500/20 text-red-500 transition-all border-red-500/10 hover:border-red-500/50 flex items-center gap-2.5">
+                <LogOut size={18} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Quit</span>
+              </button>
             </div>
 
             <div className="max-w-6xl w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -379,7 +406,15 @@ function App() {
 
         {gameState === 'PLAYING' && (
           <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50">
-            <ShootingGame level={currentLevel} onGameOver={handleGameOver} onQuit={() => setGameState('STAGES')} onOpenSettings={() => setShowSettings(true)} controls={controls} enabledPowerUps={enabledPowerUps} />
+            <ShootingGame
+              level={currentLevel}
+              onGameOver={handleGameOver}
+              onQuit={() => { setIsDemoMode(false); setGameState(isDemoMode ? 'LANDING' : 'STAGES'); }}
+              onOpenSettings={openSettings}
+              controls={controls}
+              enabledPowerUps={enabledPowerUps}
+              isDemoMode={isDemoMode}
+            />
           </motion.div>
         )}
 
@@ -464,7 +499,7 @@ function App() {
       <ModalWrapper isOpen={showSettings} onClose={() => { setShowSettings(false); setActiveControl(null); }} title={<>Simulation <br/>Settings</>}>
           <div className="space-y-6">
             <p className="text-gray-500 uppercase text-xs font-bold tracking-[0.2em] mb-4">Click a module to remap neural link</p>
-            {Object.entries(controls).map(([action, key]) => (
+            {Object.entries(tempControls).map(([action, key]) => (
               <div key={action} className="flex justify-between items-center font-mono group">
                 <span className="text-gray-400 capitalize text-lg font-bold group-hover:text-primary transition-colors">{action}</span>
                 <button 
@@ -477,6 +512,36 @@ function App() {
                 </button>
               </div>
             ))}
+            
+            {(() => {
+              const hasChanges = JSON.stringify(tempControls) !== JSON.stringify(controls);
+              return (
+                <div className="flex gap-4 mt-10">
+                    <button 
+                      onClick={() => {
+                        setControls({ ...tempControls });
+                        setShowSettings(false);
+                      }}
+                      className={`flex-1 text-lg font-black uppercase tracking-widest py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 ${
+                        hasChanges 
+                          ? 'bg-primary text-black border-primary shadow-[0_0_30px_rgba(0,242,255,0.5)] animate-pulse scale-105' 
+                          : 'bg-primary/20 text-primary border-primary/20 opacity-50 cursor-default'
+                      }`}
+                    >
+                      <Check size={20} /> Apply
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setShowSettings(false);
+                        setActiveControl(null);
+                      }}
+                      className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 text-lg font-black uppercase tracking-widest py-4 rounded-2xl transition-colors border border-white/5"
+                    >
+                      Cancel
+                    </button>
+                </div>
+              );
+            })()}
           </div>
       </ModalWrapper>
 
@@ -518,10 +583,107 @@ function App() {
                 </button>
               )})}
            </div>
-           <div className="flex gap-4 mt-10">
-              <button onClick={() => { setEnabledPowerUps([...tempPowerUps]); setShowPowerUpEdit(false); }} className="flex-1 btn-primary py-5 rounded-2xl flex items-center justify-center gap-3 text-xl font-black uppercase tracking-widest bg-accent border-accent shadow-[0_0_20px_rgba(255,0,242,0.3)]"><Check /> Apply</button>
-              <button onClick={() => setShowPowerUpEdit(false)} className="flex-1 glass-card py-5 rounded-2xl font-black uppercase text-xs tracking-widest border-white/5 hover:text-white transition-colors">Cancel</button>
-           </div>
+           {(() => {
+             const hasChanges = JSON.stringify([...tempPowerUps].sort()) !== JSON.stringify([...enabledPowerUps].sort());
+             return (
+               <div className="flex gap-4 mt-10">
+                  <button 
+                    onClick={() => { setEnabledPowerUps([...tempPowerUps]); setShowPowerUpEdit(false); }} 
+                    className={`flex-1 py-5 rounded-2xl flex items-center justify-center gap-3 text-xl font-black uppercase tracking-widest transition-all border ${
+                      hasChanges 
+                        ? 'bg-accent border-accent text-white shadow-[0_0_30px_rgba(255,0,242,0.5)] animate-pulse scale-105' 
+                        : 'bg-accent/20 border-accent/20 text-accent opacity-50 cursor-default'
+                    }`}
+                  >
+                    <Check /> Apply
+                  </button>
+                  <button onClick={() => setShowPowerUpEdit(false)} className="flex-1 glass-card py-5 rounded-2xl font-black uppercase text-xs tracking-widest border-white/5 hover:text-white transition-colors">Cancel</button>
+               </div>
+             );
+           })()}
+      </ModalWrapper>
+
+      <ModalWrapper isOpen={showDemo} onClose={() => setShowDemo(false)} title="Training Uplink">
+          <div className="relative overflow-hidden min-h-[400px] flex flex-col">
+              <AnimatePresence mode="wait">
+                  <motion.div 
+                    key={currentDemoSlide}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="flex-1 space-y-8 py-6"
+                  >
+                      {(() => {
+                          const slides = [
+                              {
+                                  title: "Nebula Mission",
+                                  desc: "Pilot, your mission is to secure the outer sectors. Engage enemy forces and survive the onslaught of the Nebula fleet.",
+                                  icon: <Play size={80} className="text-primary animate-pulse" />,
+                                  color: "primary"
+                              },
+                              {
+                                  title: "Neural Control",
+                                  desc: "Direct neural link established. Use WASD to maneuver your craft and SPACE to unleash primary weapons. Precision is key.",
+                                  icon: <Keyboard size={80} className="text-accent" />,
+                                  color: "accent"
+                              },
+                              {
+                                  title: "Combat Mods",
+                                  desc: "Collect power-ups to enhance your hull, fire rate, and weapon systems. Adapt your loadout to dominate the battlefield.",
+                                  icon: <Zap size={80} className="text-yellow-400" />,
+                                  color: "yellow-400"
+                              },
+                              {
+                                  title: "Flagship Protocol",
+                                  desc: "Clear sectors to reach the flagship. Defeating bosses unlocks new quadrants and advanced simulation technology.",
+                                  icon: <Skull size={80} className="text-red-500" />,
+                                  color: "red-500"
+                              }
+                          ];
+                          const slide = slides[currentDemoSlide];
+                          return (
+                              <div className="flex flex-col items-center text-center space-y-6">
+                                  <div className={`w-32 h-32 rounded-3xl bg-${slide.color}/10 border-2 border-${slide.color}/20 flex items-center justify-center shadow-[0_0_30px_rgba(0,242,255,0.1)]`}>
+                                      {slide.icon}
+                                  </div>
+                                  <div className="space-y-4">
+                                      <h3 className={`text-4xl font-black italic uppercase tracking-tighter text-${slide.color}`}>{slide.title}</h3>
+                                      <p className="text-gray-400 text-lg leading-relaxed max-w-sm">{slide.desc}</p>
+                                  </div>
+                              </div>
+                          );
+                      })()}
+                  </motion.div>
+              </AnimatePresence>
+
+              <div className="flex justify-between items-center mt-auto pt-8 border-t border-white/5">
+                  <div className="flex gap-2">
+                      {[0, 1, 2, 3].map(i => (
+                          <div key={i} className={`h-1.5 rounded-full transition-all ${i === currentDemoSlide ? 'w-8 bg-primary' : 'w-2 bg-white/10'}`} />
+                      ))}
+                  </div>
+                  <div className="flex gap-4">
+                      {currentDemoSlide > 0 && (
+                          <button onClick={() => setCurrentDemoSlide(prev => prev - 1)} className="px-6 py-2 glass-card hover:bg-white/5 text-gray-500 uppercase text-[10px] font-black tracking-widest transition-colors">Previous</button>
+                      )}
+                      <button 
+                        onClick={() => {
+                            if (currentDemoSlide < 3) {
+                              setCurrentDemoSlide(prev => prev + 1);
+                            } else {
+                              setShowDemo(false);
+                              setIsDemoMode(true);
+                              setCurrentLevel(1);
+                              setGameState('PLAYING');
+                            }
+                        }} 
+                        className="btn-primary px-8 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em]"
+                      >
+                        {currentDemoSlide < 3 ? 'Next Data' : '🚀 Launch Demo'}
+                      </button>
+                  </div>
+              </div>
+          </div>
       </ModalWrapper>
 
       <ModalWrapper isOpen={showQuitConfirm} onClose={() => setShowQuitConfirm(false)} title="Power Down?">
