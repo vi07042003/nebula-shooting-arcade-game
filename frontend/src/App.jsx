@@ -314,6 +314,11 @@ function App() {
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
   const [tempUsername, setTempUsername] = useState(username);
   const profileDrawerRef = useRef(null);
+  const [playMode, setPlayMode] = useState(localStorage.getItem('nebula_playmode') || 'manual');
+
+  useEffect(() => {
+    localStorage.setItem('nebula_playmode', playMode);
+  }, [playMode]);
   
   const [enabledPowerUps, setEnabledPowerUps] = useState(JSON.parse(localStorage.getItem('nebula_powerups')) || ['shield', 'multishot', 'rapidfire', 'slowmo']);
   const [tempPowerUps, setTempPowerUps] = useState([]);
@@ -583,11 +588,42 @@ function App() {
                   </motion.p>
                 </motion.div>
 
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.9, duration: 0.8, ease: "easeOut" }}
+                  className="flex flex-col gap-3 pt-4 text-left"
+                >
+                  <label className="text-[10px] uppercase tracking-[0.3em] font-black text-gray-500">Neural Control Interface</label>
+                  <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-[1.5rem] w-fit">
+                    <button 
+                      onClick={() => setPlayMode('manual')}
+                      className={`px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
+                        playMode === 'manual' 
+                          ? 'bg-primary text-black shadow-[0_0_20px_rgba(0,242,255,0.3)] font-bold' 
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      Keyboard
+                    </button>
+                    <button 
+                      onClick={() => setPlayMode('gesture')}
+                      className={`px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${
+                        playMode === 'gesture' 
+                          ? 'bg-accent text-black shadow-[0_0_20px_rgba(255,0,242,0.3)] font-bold' 
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      Hand Gestures
+                    </button>
+                  </div>
+                </motion.div>
+
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 1.0, duration: 0.8, ease: "easeOut" }}
-                  className="flex gap-6 pt-4"
+                  transition={{ delay: 1.1, duration: 0.8, ease: "easeOut" }}
+                  className="flex gap-6 pt-2"
                 >
                   <button onClick={() => startLevel(unlockedLevels)} className="btn-primary group flex items-center gap-4 text-2xl px-12 py-6 rounded-[2rem] shadow-[0_20px_50px_rgba(0,242,255,0.3)]"><Play className="group-hover:scale-125 transition-transform" /> CONTINUE MISSION</button>
                   <button onClick={() => setGameState('STAGES')} className="glass-card flex items-center gap-4 text-2xl px-12 py-6 rounded-[2rem] hover:bg-white/10 transition-all font-black border-white/10"><Layers size={28} /> SECTORS</button>
@@ -689,6 +725,7 @@ function App() {
               controls={controls}
               enabledPowerUps={enabledPowerUps}
               isDemoMode={isDemoMode}
+              playMode={playMode}
             />
           </motion.div>
         )}
@@ -773,6 +810,31 @@ function App() {
 
       <ModalWrapper isOpen={showSettings} onClose={() => { setShowSettings(false); setActiveControl(null); }} title={<>Simulation <br/>Settings</>}>
           <div className="space-y-6">
+            <div className="border-b border-white/10 pb-6 mb-4">
+              <label className="text-[10px] uppercase tracking-[0.2em] font-black text-gray-500 block mb-3">Neural Playback Interface</label>
+              <div className="flex bg-white/5 border border-white/10 p-1 rounded-2xl w-full">
+                <button 
+                  onClick={() => setPlayMode('manual')}
+                  className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
+                    playMode === 'manual' 
+                      ? 'bg-primary text-black shadow-[0_0_15px_rgba(0,242,255,0.25)]' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Keyboard
+                </button>
+                <button 
+                  onClick={() => setPlayMode('gesture')}
+                  className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
+                    playMode === 'gesture' 
+                      ? 'bg-accent text-black shadow-[0_0_15px_rgba(255,0,242,0.25)]' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Hand Gestures
+                </button>
+              </div>
+            </div>
             <p className="text-gray-500 uppercase text-xs font-bold tracking-[0.2em] mb-4">Click a module to remap neural link</p>
             {Object.entries(tempControls).map(([action, key]) => (
               <div key={action} className="flex justify-between items-center font-mono group">

@@ -1,0 +1,67 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Nebula Shooting Arcade — Development Docker Compose
+#  Run everything with:  docker compose -f docker-compose.dev.yml up --build
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── PostgreSQL database ──────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: nebula_db_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shooting_game
+      POSTGRES_USER: nebula
+      POSTGRES_PASSWORD: nebula_secret
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nebula -d shooting_game"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI backend (with Hot Reloading) ─────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nebula_backend_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://nebula:nebula_secret@db:5432/shooting_game
+    env_file:
+      - path: ./backend/.env
+        required: false
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── React / Vite frontend (with Hot Reloading) ───────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nebula_frontend_dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume ensures container's node_modules are not overwritten by host
+      - /app/node_modules
+    depends_on:
+      - backend
+
+# ── Named volumes ────────────────────────────────────────────────────────────
+volumes:
+  postgres_dev_data:
+    driver: local

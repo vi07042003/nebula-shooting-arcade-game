@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, RefreshCcw, Home, Settings, Pause, ChevronRight, Zap, Skull, ShieldAlert, X, Shield, Timer, Zap as RapidIcon, Layers } from 'lucide-react';
 
-const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps, isDemoMode = false }) => {
+const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps, isDemoMode = false, playMode = 'manual' }) => {
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(100);
@@ -13,6 +13,149 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
   const [isPaused, setIsPaused] = useState(false);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const requestRef = useRef();
+  
+  // Hand tracking states & refs
+  const [gestureStatus, setGestureStatus] = useState('Off');
+  const [cameraActive, setCameraActive] = useState(false);
+  const videoRef = useRef(null);
+  const handsRef = useRef(null);
+  const cameraRef = useRef(null);
+  const handCoordinates = useRef({ x: 0.5, y: 0.8, isClosed: false });
+  const playModeRef = useRef(playMode);
+
+  useEffect(() => {
+    playModeRef.current = playMode;
+  }, [playMode]);
+
+  // MediaPipe hands detection loop
+  useEffect(() => {
+    if (playMode !== 'gesture') {
+      setGestureStatus('Off');
+      if (cameraRef.current) {
+        try { cameraRef.current.stop(); } catch(e){}
+        cameraRef.current = null;
+      }
+      if (handsRef.current) {
+        try { handsRef.current.close(); } catch(e){}
+        handsRef.current = null;
+      }
+      return;
+    }
+
+    setGestureStatus('Initializing Neural Link...');
+    let active = true;
+    let localCamera = null;
+    let localHands = null;
+
+    const initMediaPipe = async () => {
+      try {
+        if (!window.Hands || !window.Camera) {
+          for (let i = 0; i < 15; i++) {
+            if (window.Hands && window.Camera) break;
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        }
+
+        if (!window.Hands || !window.Camera) {
+          throw new Error('Neural tracking libraries missing from host matrix.');
+        }
+
+        const handsObj = new window.Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        handsObj.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+
+        handsObj.onResults((results) => {
+          if (!active) return;
+          if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+            const wrist = landmarks[0];
+            const middleMcp = landmarks[9];
+            const handScale = Math.sqrt((wrist.x - middleMcp.x)**2 + (wrist.y - middleMcp.y)**2);
+            
+            if (handScale > 0.01) {
+              let closedFingers = 0;
+              const fingers = [
+                { tip: 8, mcp: 5 },
+                { tip: 12, mcp: 9 },
+                { tip: 16, mcp: 13 },
+                { tip: 20, mcp: 17 }
+              ];
+              fingers.forEach(f => {
+                const dist = Math.sqrt((landmarks[f.tip].x - landmarks[f.mcp].x)**2 + (landmarks[f.tip].y - landmarks[f.mcp].y)**2);
+                if (dist / handScale < 0.65) {
+                  closedFingers++;
+                }
+              });
+              const isClosed = closedFingers >= 3;
+
+              handCoordinates.current = {
+                x: 1 - middleMcp.x, // Mirrored camera coordinates
+                y: middleMcp.y,
+                isClosed
+              };
+
+              setGestureStatus(isClosed ? 'Closed (Teleport Charging)' : 'Active');
+            }
+          } else {
+            setGestureStatus('Hand Out Of Range');
+          }
+        });
+
+        localHands = handsObj;
+        handsRef.current = handsObj;
+
+        if (videoRef.current) {
+          const cameraObj = new window.Camera(videoRef.current, {
+            onFrame: async () => {
+              if (!active) return;
+              try {
+                await handsObj.send({ image: videoRef.current });
+              } catch (e) {}
+            },
+            width: 320,
+            height: 240
+          });
+
+          cameraObj.start()
+            .then(() => {
+              if (!active) return;
+              setCameraActive(true);
+              setGestureStatus('Active');
+            })
+            .catch(err => {
+              console.error('Camera matrix failure:', err);
+              if (active) setGestureStatus('Access Denied');
+            });
+
+          localCamera = cameraObj;
+          cameraRef.current = cameraObj;
+        }
+      } catch (err) {
+        console.error('Failed to establish neural camera link:', err);
+        if (active) setGestureStatus('Offline');
+      }
+    };
+
+    initMediaPipe();
+
+    return () => {
+      active = false;
+      setCameraActive(false);
+      if (localCamera) {
+        try { localCamera.stop(); } catch(e){}
+      }
+      if (localHands) {
+        try { localHands.close(); } catch(e){}
+      }
+    };
+  }, [playMode]);
   
   const targetScore = level * 3500;
   const isBossLevel = level % 5 === 0;
@@ -37,6 +180,9 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
     echoHistory: [],
     leash: null, // { target: enemy, length: number }
     glitch: { active: false, options: [], timer: 0 },
+    teleportCharging: false,
+    teleportTargetX: undefined,
+    teleportTargetY: undefined,
     effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 }
   });
 
@@ -53,6 +199,9 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         isGameOver: false,
         shake: 0,
         levelWon: false,
+        teleportCharging: false,
+        teleportTargetX: undefined,
+        teleportTargetY: undefined,
         effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 }
     };
     setScore(0);
@@ -213,18 +362,77 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
       Object.keys(effects).forEach(k => { if(effects[k] > 0) effects[k] -= 16.6; if(effects[k] < 0) effects[k] = 0; });
       if (timestamp % 200 < 20) setActiveEffects({ ...effects }); // Periodic sync with React state
 
-      const moveSpeed = (15 + (level * 0.1)) * (effects.speedboost > 0 ? 1.6 : 1);
-      if (keys[controls.left]) player.targetX -= moveSpeed;
-      if (keys[controls.right]) player.targetX += moveSpeed;
-      if (keys[controls.up]) player.targetY -= moveSpeed;
-      if (keys[controls.down]) player.targetY += moveSpeed;
+      if (playModeRef.current === 'gesture') {
+        // Auto-firing: simulate controls.fire key pressed
+        keys[controls.fire] = true;
+        keys['Space'] = true;
 
-      player.x += (player.targetX - player.x) * player.friction;
-      player.y += (player.targetY - player.y) * player.friction + player.recoil;
-      player.recoil *= 0.85;
+        const currentHand = handCoordinates.current;
+        const targetXVal = currentHand.x * canvas.width;
+        const targetYVal = currentHand.y * canvas.height;
+
+        if (currentHand.isClosed) {
+          gameState.current.teleportCharging = true;
+          gameState.current.teleportTargetX = Math.max(player.w / 2, Math.min(canvas.width - player.w / 2, targetXVal));
+          gameState.current.teleportTargetY = Math.max(80, Math.min(canvas.height - 80, targetYVal));
+        } else {
+          if (gameState.current.teleportCharging) {
+            // TELEPORT ENGAGED!
+            const startX = player.x;
+            const startY = player.y;
+            const destX = gameState.current.teleportTargetX !== undefined ? gameState.current.teleportTargetX : player.x;
+            const destY = gameState.current.teleportTargetY !== undefined ? gameState.current.teleportTargetY : player.y;
+
+            player.x = destX;
+            player.y = destY;
+            player.targetX = destX;
+            player.targetY = destY;
+
+            // Teleport visual particle shockwave
+            for (let k = 0; k < 40; k++) {
+              particles.push({
+                x: startX, y: startY,
+                vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15,
+                life: 0.8, color: '#00f2ff', size: 3 + Math.random() * 3
+              });
+              particles.push({
+                x: destX, y: destY,
+                vx: (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 20,
+                life: 1.0, color: '#ff00ff', size: 4 + Math.random() * 4
+              });
+            }
+
+            gameState.current.shake = 25;
+            gameState.current.teleportCharging = false;
+          } else {
+            // Normal horizontal movement following hand
+            player.targetX = Math.max(player.w / 2, Math.min(canvas.width - player.w / 2, targetXVal));
+          }
+        }
+
+        player.x += (player.targetX - player.x) * player.friction;
+        player.y += (player.targetY - player.y) * player.friction + player.recoil;
+        player.recoil *= 0.85;
+      } else {
+        // Keyboard Manual Control
+        const moveSpeed = (15 + (level * 0.1)) * (effects.speedboost > 0 ? 1.6 : 1);
+        if (keys[controls.left]) player.targetX -= moveSpeed;
+        if (keys[controls.right]) player.targetX += moveSpeed;
+        if (keys[controls.up]) player.targetY -= moveSpeed;
+        if (keys[controls.down]) player.targetY += moveSpeed;
+
+        player.x += (player.targetX - player.x) * player.friction;
+        player.y += (player.targetY - player.y) * player.friction + player.recoil;
+        player.recoil *= 0.85;
+      }
 
       // FUEL CONSUMPTION
-      const isMoving = keys[controls.left] || keys[controls.right] || keys[controls.up] || keys[controls.down];
+      let isMoving = false;
+      if (playModeRef.current === 'gesture') {
+        isMoving = Math.abs(player.targetX - player.x) > 2;
+      } else {
+        isMoving = keys[controls.left] || keys[controls.right] || keys[controls.up] || keys[controls.down];
+      }
       if (!isDemoMode) {
         gameState.current.fuel -= isMoving ? 0.06 : 0.02;
       }
@@ -534,6 +742,12 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         else if (effects.multishot > 0) ctx.shadowColor = '#ff00ff';
         else ctx.shadowColor = '#00f2ff';
         
+        // Dematerialize ship if charging teleport
+        if (playModeRef.current === 'gesture' && gameState.current.teleportCharging) {
+          ctx.globalAlpha = 0.35 + Math.sin(Date.now() / 50) * 0.15;
+          ctx.filter = 'hue-rotate(90deg) saturate(2.5)';
+        }
+
         ctx.drawImage(processedImages.current.player, -gameState.current.player.w/2, -gameState.current.player.h/2, gameState.current.player.w, gameState.current.player.h);
         
         if (effects.multishot > 0) {
@@ -547,6 +761,51 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         }
 
         ctx.restore();      }
+
+      // DRAW TELEPORT TARGET RETICLE
+      if (playModeRef.current === 'gesture' && gameState.current.teleportCharging && gameState.current.teleportTargetX !== undefined) {
+        const tx = gameState.current.teleportTargetX;
+        const ty = gameState.current.teleportTargetY;
+        
+        ctx.save();
+        ctx.translate(tx, ty);
+        
+        // Holographic pulsing circle
+        const pulse = 35 + Math.sin(Date.now() / 80) * 10;
+        ctx.strokeStyle = '#ff00ff';
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#ff00ff';
+        ctx.beginPath();
+        ctx.arc(0, 0, pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Crosshairs
+        ctx.beginPath();
+        ctx.moveTo(-pulse - 10, 0); ctx.lineTo(-pulse + 5, 0);
+        ctx.moveTo(pulse + 10, 0); ctx.lineTo(pulse - 5, 0);
+        ctx.moveTo(0, -pulse - 10); ctx.lineTo(0, -pulse + 5);
+        ctx.moveTo(0, pulse + 10); ctx.lineTo(0, pulse - 5);
+        ctx.stroke();
+        
+        // Outer warning bracket
+        ctx.strokeStyle = '#00f2ff';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, pulse + 15, -Math.PI/4, Math.PI/4); ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, pulse + 15, Math.PI * 3/4, Math.PI * 5/4); ctx.stroke();
+        
+        // Draw mini ghost ship inside reticle
+        if (processedImages.current.player) {
+          ctx.globalAlpha = 0.4;
+          ctx.filter = 'drop-shadow(0 0 8px #ff00ff) saturate(2)';
+          ctx.drawImage(processedImages.current.player, -gameState.current.player.w/2, -gameState.current.player.h/2, gameState.current.player.w, gameState.current.player.h);
+        }
+        
+        ctx.restore();
+      }
+
       gameState.current.projectiles.forEach(p => {
         ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fillStyle = p.color; ctx.fill(); ctx.shadowBlur = 15; ctx.shadowColor = p.color;
       });
@@ -564,6 +823,44 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
   return (
     <div className={`relative w-full h-screen overflow-hidden ${isPaused ? '' : 'cursor-none'} bg-black font-sans`}>
       <canvas ref={canvasRef} className="block w-full h-full" />
+      
+      {/* Hand Gesture Camera Overlay */}
+      {playMode === 'gesture' && (
+        <div className="absolute bottom-10 left-10 z-[120] flex flex-col gap-3">
+          <div className="glass-card p-3 border border-white/10 rounded-3xl bg-black/85 shadow-[0_0_40px_rgba(0,242,255,0.2)] flex flex-col items-center">
+            {/* Webcam Video */}
+            <div className="relative w-48 h-36 rounded-2xl overflow-hidden border border-white/10 bg-black/90 shadow-inner">
+              <video 
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}
+                playsInline
+                muted
+              />
+              {/* Status Indicator Overlay */}
+              <div className="absolute top-2 left-2 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/15 flex items-center gap-1.5 shadow">
+                <span className={`w-2 h-2 rounded-full ${
+                  gestureStatus === 'Active' 
+                    ? 'bg-cyan-400 animate-pulse' 
+                    : gestureStatus.includes('Charging')
+                      ? 'bg-fuchsia-400 animate-pulse shadow-[0_0_8px_#ff00ff]'
+                      : gestureStatus.includes('Initializing') 
+                        ? 'bg-amber-400 animate-pulse' 
+                        : 'bg-red-500'
+                }`} />
+                <span className="text-[8px] font-black uppercase tracking-[0.15em] text-white/90 font-mono">{gestureStatus}</span>
+              </div>
+              
+              {/* Teleport ready prompt */}
+              {(gestureStatus === 'Active' || gestureStatus.includes('Charging')) && (
+                <div className="absolute bottom-2 left-2 right-2 px-2 py-1 rounded-lg bg-black/85 border border-white/5 text-[8px] text-gray-400 font-bold uppercase tracking-wider text-center">
+                  ✊ Fist to Charge · ✋ Open to Teleport
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       {isDemoMode && (
         <div className="absolute top-0 left-0 right-0 z-[150] flex items-center justify-center py-3 bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20 border-b border-primary/30 backdrop-blur-sm">
