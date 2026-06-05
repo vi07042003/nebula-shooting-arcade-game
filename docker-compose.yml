@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Nebula Shooting Arcade — Docker Compose
+#  Run everything with:  docker compose up --build
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── PostgreSQL database ──────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: nebula_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shooting_game
+      POSTGRES_USER: nebula
+      POSTGRES_PASSWORD: nebula_secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nebula -d shooting_game"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI backend ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nebula_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Points to the Postgres service defined above
+      DATABASE_URL: postgresql://nebula:nebula_secret@db:5432/shooting_game
+      # Optional: add your Gemini API key here OR in a .env file at the root
+      # GEMINI_API_KEY: your_key_here
+    env_file:
+      # Loads GEMINI_API_KEY from backend/.env if present (key is optional)
+      - path: ./backend/.env
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── React / Vite frontend ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nebula_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Tells the browser where the API lives
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+# ── Named volumes ────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    driver: local

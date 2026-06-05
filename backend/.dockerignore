@@ -1,0 +1,20 @@
+# Backend .dockerignore — keeps the image lean
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+.env
+.git/
+.gitignore
+scores.json
+scores.json.bak
+chat_history.json
+*.db
+*.sqlite

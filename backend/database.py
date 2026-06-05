@@ -1,10 +1,15 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, create_engine, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import datetime
+import os
 
 # PostgreSQL connection URL
-# Use empty host to connect via unix socket (Peer authentication)
-SQLALCHEMY_DATABASE_URL = "postgresql:///shooting_game"
+# When running in Docker, DATABASE_URL env var is set by docker-compose pointing to the
+# Postgres service. Falls back to unix-socket peer auth for local development.
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql:///shooting_game"
+)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
