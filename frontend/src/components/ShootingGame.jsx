@@ -2,7 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, RefreshCcw, Home, Settings, Pause, ChevronRight, Zap, Skull, ShieldAlert, X, Shield, Timer, Zap as RapidIcon, Layers } from 'lucide-react';
 
-const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps, isDemoMode = false, playMode = 'manual' }) => {
+const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps, isDemoMode = false, playMode = 'manual', gestureSettings }) => {
+  const gs = gestureSettings || {
+    detectionConfidence: 0.5,
+    trackingConfidence: 0.5,
+    fistThreshold: 0.65,
+    mirrorFeed: true,
+    modelComplexity: 1
+  };
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
   const [health, setHealth] = useState(100);
@@ -66,9 +73,9 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
 
         handsObj.setOptions({
           maxNumHands: 1,
-          modelComplexity: 1,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
+          modelComplexity: gs.modelComplexity,
+          minDetectionConfidence: gs.detectionConfidence,
+          minTrackingConfidence: gs.trackingConfidence
         });
 
         handsObj.onResults((results) => {
@@ -89,14 +96,14 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
               ];
               fingers.forEach(f => {
                 const dist = Math.sqrt((landmarks[f.tip].x - landmarks[f.mcp].x)**2 + (landmarks[f.tip].y - landmarks[f.mcp].y)**2);
-                if (dist / handScale < 0.65) {
+                if (dist / handScale < gs.fistThreshold) {
                   closedFingers++;
                 }
               });
               const isClosed = closedFingers >= 3;
 
               handCoordinates.current = {
-                x: 1 - middleMcp.x, // Mirrored camera coordinates
+                x: gs.mirrorFeed ? 1 - middleMcp.x : middleMcp.x, // Mirrored or normal camera coordinates
                 y: middleMcp.y,
                 isClosed
               };
@@ -155,7 +162,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         try { localHands.close(); } catch(e){}
       }
     };
-  }, [playMode]);
+  }, [playMode, gestureSettings]);
   
   const targetScore = level * 3500;
   const isBossLevel = level % 5 === 0;
@@ -833,7 +840,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
               <video 
                 ref={videoRef}
                 className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
+                style={{ transform: gs.mirrorFeed ? 'scaleX(-1)' : 'none' }}
                 playsInline
                 muted
               />

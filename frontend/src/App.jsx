@@ -328,6 +328,22 @@ function App() {
     up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', fire: 'Space'
   });
 
+  const [gestureSettings, setGestureSettings] = useState(() => {
+    const saved = localStorage.getItem('nebula_gesture_settings');
+    return saved ? JSON.parse(saved) : {
+      detectionConfidence: 0.5,
+      trackingConfidence: 0.5,
+      fistThreshold: 0.65,
+      mirrorFeed: true,
+      modelComplexity: 1
+    };
+  });
+  const [tempGestureSettings, setTempGestureSettings] = useState({ ...gestureSettings });
+
+  useEffect(() => {
+    localStorage.setItem('nebula_gesture_settings', JSON.stringify(gestureSettings));
+  }, [gestureSettings]);
+
   useEffect(() => {
     localStorage.setItem('nebula_pilot', username);
     localStorage.setItem('nebula_pilot_id', pilotId);
@@ -405,6 +421,7 @@ function App() {
 
   const openSettings = () => {
     setTempControls({ ...controls });
+    setTempGestureSettings({ ...gestureSettings });
     setShowSettings(true);
   };
 
@@ -726,6 +743,7 @@ function App() {
               enabledPowerUps={enabledPowerUps}
               isDemoMode={isDemoMode}
               playMode={playMode}
+              gestureSettings={gestureSettings}
             />
           </motion.div>
         )}
@@ -835,28 +853,129 @@ function App() {
                 </button>
               </div>
             </div>
-            <p className="text-gray-500 uppercase text-xs font-bold tracking-[0.2em] mb-4">Click a module to remap neural link</p>
-            {Object.entries(tempControls).map(([action, key]) => (
-              <div key={action} className="flex justify-between items-center font-mono group">
-                <span className="text-gray-400 capitalize text-lg font-bold group-hover:text-primary transition-colors">{action}</span>
-                <button 
-                  onClick={() => setActiveControl(action)} 
-                  className={`border-2 px-8 py-4 rounded-2xl transition-all font-black uppercase text-sm w-44 text-center ${
-                    activeControl === action ? 'bg-primary text-black border-primary scale-110 shadow-[0_0_20px_rgba(0,242,255,0.4)]' : 'bg-white/5 border-white/10 text-accent hover:border-accent hover:text-white'
-                  }`}
-                >
-                  {activeControl === action ? 'PRESS KEY' : key.replace('Key', '')}
-                </button>
+            {playMode === 'manual' ? (
+              <>
+                <p className="text-gray-500 uppercase text-xs font-bold tracking-[0.2em] mb-4">Click a module to remap neural link</p>
+                {Object.entries(tempControls).map(([action, key]) => (
+                  <div key={action} className="flex justify-between items-center font-mono group">
+                    <span className="text-gray-400 capitalize text-lg font-bold group-hover:text-primary transition-colors">{action}</span>
+                    <button 
+                      onClick={() => setActiveControl(action)} 
+                      className={`border-2 px-8 py-4 rounded-2xl transition-all font-black uppercase text-sm w-44 text-center ${
+                        activeControl === action ? 'bg-primary text-black border-primary scale-110 shadow-[0_0_20px_rgba(0,242,255,0.4)]' : 'bg-white/5 border-white/10 text-accent hover:border-accent hover:text-white'
+                      }`}
+                    >
+                      {activeControl === action ? 'PRESS KEY' : key.replace('Key', '')}
+                    </button>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="space-y-6">
+                <p className="text-gray-500 uppercase text-xs font-bold tracking-[0.2em] mb-4">Neural Hand Gesture Calibrations</p>
+                
+                {/* Detection Confidence */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between text-sm font-mono">
+                    <span className="text-gray-400 font-bold">Detection Confidence</span>
+                    <span className="text-accent">{Math.round(tempGestureSettings.detectionConfidence * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.1" 
+                    max="1.0" 
+                    step="0.05"
+                    value={tempGestureSettings.detectionConfidence}
+                    onChange={(e) => setTempGestureSettings(prev => ({ ...prev, detectionConfidence: parseFloat(e.target.value) }))}
+                    className="w-full accent-accent bg-white/10 h-2 rounded-lg cursor-pointer"
+                  />
+                  <span className="text-[10px] text-gray-500">Minimum confidence value for hand detection to be considered successful.</span>
+                </div>
+
+                {/* Tracking Confidence */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between text-sm font-mono">
+                    <span className="text-gray-400 font-bold">Tracking Confidence</span>
+                    <span className="text-accent">{Math.round(tempGestureSettings.trackingConfidence * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.1" 
+                    max="1.0" 
+                    step="0.05"
+                    value={tempGestureSettings.trackingConfidence}
+                    onChange={(e) => setTempGestureSettings(prev => ({ ...prev, trackingConfidence: parseFloat(e.target.value) }))}
+                    className="w-full accent-accent bg-white/10 h-2 rounded-lg cursor-pointer"
+                  />
+                  <span className="text-[10px] text-gray-500">Minimum confidence value for hand tracking to prevent jitter.</span>
+                </div>
+
+                {/* Fist Closure Sensitivity */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between text-sm font-mono">
+                    <span className="text-gray-400 font-bold">Fist Closure Threshold</span>
+                    <span className="text-accent">{Math.round(tempGestureSettings.fistThreshold * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0.4" 
+                    max="0.9" 
+                    step="0.05"
+                    value={tempGestureSettings.fistThreshold}
+                    onChange={(e) => setTempGestureSettings(prev => ({ ...prev, fistThreshold: parseFloat(e.target.value) }))}
+                    className="w-full accent-accent bg-white/10 h-2 rounded-lg cursor-pointer"
+                  />
+                  <span className="text-[10px] text-gray-500">Lower threshold requires a tighter fist to trigger Teleport Charging.</span>
+                </div>
+
+                {/* Mirror Feed & Model Complexity */}
+                <div className="flex justify-between items-center py-2 border-t border-white/5">
+                  <span className="text-gray-400 text-sm font-bold">Mirror Camera Feed</span>
+                  <button 
+                    onClick={() => setTempGestureSettings(prev => ({ ...prev, mirrorFeed: !prev.mirrorFeed }))}
+                    className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                      tempGestureSettings.mirrorFeed ? 'bg-accent text-black shadow-[0_0_15px_rgba(255,0,242,0.25)]' : 'bg-white/5 text-gray-400 border border-white/10'
+                    }`}
+                  >
+                    {tempGestureSettings.mirrorFeed ? 'Mirrored' : 'Normal'}
+                  </button>
+                </div>
+
+                <div className="flex justify-between items-center py-2 border-t border-white/5">
+                  <span className="text-gray-400 text-sm font-bold">Model Complexity</span>
+                  <div className="flex bg-white/5 border border-white/10 p-0.5 rounded-xl">
+                    <button 
+                      onClick={() => setTempGestureSettings(prev => ({ ...prev, modelComplexity: 0 }))}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                        tempGestureSettings.modelComplexity === 0 ? 'bg-accent text-black' : 'text-gray-400'
+                      }`}
+                    >
+                      Fast
+                    </button>
+                    <button 
+                      onClick={() => setTempGestureSettings(prev => ({ ...prev, modelComplexity: 1 }))}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                        tempGestureSettings.modelComplexity === 1 ? 'bg-accent text-black' : 'text-gray-400'
+                      }`}
+                    >
+                      High Q
+                    </button>
+                  </div>
+                </div>
               </div>
-            ))}
+            )}
             
             {(() => {
-              const hasChanges = JSON.stringify(tempControls) !== JSON.stringify(controls);
+              const controlsChanged = JSON.stringify(tempControls) !== JSON.stringify(controls);
+              const gestureSettingsChanged = JSON.stringify(tempGestureSettings) !== JSON.stringify(gestureSettings);
+              const hasChanges = controlsChanged || gestureSettingsChanged;
               return (
                 <div className="flex gap-4 mt-10">
                     <button 
+                      disabled={!hasChanges}
                       onClick={() => {
                         setControls({ ...tempControls });
+                        setGestureSettings({ ...tempGestureSettings });
                         setShowSettings(false);
                       }}
                       className={`flex-1 text-lg font-black uppercase tracking-widest py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 ${
