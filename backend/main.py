@@ -169,14 +169,25 @@ async def ai_chat(msg: ChatMessage, db: Session = Depends(get_db)):
     )
 
     # Get AI response
-    reply = aura.chat(history, msg.message, context)
+    chat_result = aura.chat(history, msg.message, context)
+    reply = chat_result["reply"]
+    usage = chat_result["usage"]
     
     # Save AI response
     ai_msg = ChatMessageEntry(session_id=msg.session_id, role="assistant", content=reply)
     db.add(ai_msg)
     db.commit()
     
-    return {"reply": reply}
+    return {"reply": reply, "usage": usage}
+
+@app.get("/ai/usage")
+async def get_ai_usage():
+    """Retrieve current Gemini API usage limits and statistics"""
+    return {
+        "active_model": "Gemini 2.0 Flash" if aura.gemini_client else "Pollinations AI (Free Tier)",
+        "limits": aura._get_usage_stats()
+    }
+
 
 @app.get("/ai/sessions/{pilot_id}")
 async def get_sessions(pilot_id: str, db: Session = Depends(get_db)):

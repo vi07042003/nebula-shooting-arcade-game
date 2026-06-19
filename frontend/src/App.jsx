@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ShootingGame from './components/ShootingGame';
 import ShootingStars from './components/ShootingStars';
 import axios from 'axios';
-import { Trophy, Play, Home, RefreshCcw, Settings, X, LogOut, ChevronRight, Keyboard, Layers, Lock, Unlock, Skull, Link, Zap, Shield, Timer, Sliders, Check, Edit2, Loader2, MessageSquare, Send, RotateCcw } from 'lucide-react';
+import { Trophy, Play, Home, RefreshCcw, Settings, X, LogOut, ChevronRight, Keyboard, Layers, Lock, Unlock, Skull, Link, Zap, Shield, Timer, Sliders, Check, Edit2, Loader2, MessageSquare, Send, RotateCcw, Cpu, Activity, Radio, BarChart2, ChevronDown, ChevronUp } from 'lucide-react';
+
 
 const API_URL = 'http://localhost:8000';
 
@@ -11,6 +12,7 @@ const API_URL = 'http://localhost:8000';
 const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enabledPowerUps }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   
@@ -19,6 +21,18 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [usage, setUsage] = useState({
+    active_model: 'Gemini 2.0 Flash',
+    limits: {
+      rpm_limit: 15,
+      rpm_current: 0,
+      tpm_limit: 1000000,
+      tpm_current: 0,
+      rpd_limit: 1500,
+      rpd_current: 0
+    }
+  });
+
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const widgetRef = useRef(null);
@@ -34,12 +48,22 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  // Fetch sessions on load
+  // Fetch sessions and usage stats on open
   useEffect(() => {
     if (pilotId && isOpen) {
         fetchSessions();
+        fetchUsage();
     }
   }, [pilotId, isOpen]);
+
+  const fetchUsage = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/ai/usage`);
+      setUsage(res.data);
+    } catch (e) {
+      console.error("Failed to load usage stats", e);
+    }
+  };
 
   const fetchSessions = async () => {
       try {
@@ -121,7 +145,12 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
         powerups: enabledPowerUps
       });
       setMessages(prev => [...prev, { role: 'assistant', text: res.data.reply }]);
-      fetchSessions(); // Refresh list to catch title update
+      if (res.data.usage) {
+        setUsage(res.data.usage);
+      } else {
+        fetchUsage();
+      }
+      fetchSessions();
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', text: 'Neural link interference detected. Please check backend connection and retry.' }]);
     } finally {
@@ -132,8 +161,6 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
-
-
 
   return (
     <div ref={widgetRef}>
@@ -162,13 +189,13 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed bottom-28 right-8 z-[499] w-[400px] flex flex-col rounded-3xl overflow-hidden shadow-[0_0_80px_rgba(0,242,255,0.2)] border border-white/10"
-            style={{ maxHeight: '70vh', background: 'rgba(5,5,5,0.97)', backdropFilter: 'blur(20px)' }}
+            className="fixed bottom-28 right-8 z-[499] w-[420px] flex flex-col rounded-3xl overflow-hidden shadow-[0_0_80px_rgba(0,242,255,0.25)] border border-primary/20 bg-[#060608]/95 backdrop-blur-2xl"
+            style={{ maxHeight: '80vh' }}
           >
             {/* Sidebar for History */}
             <AnimatePresence>
                 {isSidebarOpen && (
-                    <motion.div initial={{ x: -400 }} animate={{ x: 0 }} exit={{ x: -400 }} className="absolute inset-0 z-50 bg-black/95 backdrop-blur-3xl flex flex-col">
+                    <motion.div initial={{ x: -420 }} animate={{ x: 0 }} exit={{ x: -420 }} className="absolute inset-0 z-50 bg-[#060608]/98 backdrop-blur-3xl flex flex-col border-r border-white/5">
                         <div className="p-4 border-b border-white/10 flex justify-between items-center bg-white/5">
                             <span className="font-black text-sm tracking-widest uppercase text-primary">Chat History</span>
                             <button onClick={() => setIsSidebarOpen(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={16} /></button>
@@ -187,24 +214,133 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
             </AnimatePresence>
 
             {/* Header */}
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10" style={{ background: 'linear-gradient(135deg, rgba(0,242,255,0.1), rgba(112,0,255,0.1))' }}>
-              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-xl mr-1">
-                  <Layers size={18} />
-              </button>
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-primary/50" style={{ background: 'linear-gradient(135deg,#00f2ff22,#7000ff22)' }}>
-                  <Layers size={18} className="text-primary" />
+            <div className="flex flex-col border-b border-white/10" style={{ background: 'linear-gradient(135deg, rgba(0,242,255,0.08), rgba(112,0,255,0.08))' }}>
+              <div className="flex items-center gap-3 px-5 py-4">
+                <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-xl mr-1">
+                    <Layers size={18} />
+                </button>
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center border border-primary/40 bg-primary/10 shadow-[0_0_15px_rgba(0,242,255,0.2)]">
+                    <Cpu size={18} className="text-primary animate-pulse" />
+                  </div>
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-black" />
                 </div>
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-black" />
+                <div className="flex-1">
+                  <div className="font-black text-white text-sm tracking-wider flex items-center gap-2">
+                    AURA 
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono font-bold uppercase tracking-widest">v2.1</span>
+                  </div>
+                  <div className="text-[10px] text-white/40 font-mono uppercase tracking-widest flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-ping" />
+                    Neural Link Active
+                  </div>
+                </div>
+                
+                {/* Diagnostics Toggle */}
+                <button 
+                  onClick={() => setIsDiagnosticsOpen(!isDiagnosticsOpen)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-mono uppercase tracking-widest transition-all ${
+                    isDiagnosticsOpen 
+                      ? 'bg-primary/20 border-primary/40 text-primary shadow-[0_0_10px_rgba(0,242,255,0.15)]' 
+                      : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Activity size={10} />
+                  Telemetry
+                  {isDiagnosticsOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                </button>
               </div>
-              <div className="flex-1">
-                <div className="font-black text-white text-sm tracking-wider">AURA</div>
-                <div className="text-[10px] text-primary/60 font-mono uppercase tracking-widest">AI Navigator // Online</div>
-              </div>
+
+              {/* Diagnostics Collapsible Telemetry Panel */}
+              <AnimatePresence>
+                {isDiagnosticsOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden border-t border-white/5 bg-black/40 px-5 font-mono text-[10px] text-white/70"
+                  >
+                    <div className="py-4 space-y-3">
+                      <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
+                        <span className="text-white/40 uppercase tracking-widest">Processor Model:</span>
+                        <span className={`font-bold ${usage.active_model.includes('Gemini') ? 'text-primary' : 'text-purple-400'}`}>
+                          {usage.active_model}
+                        </span>
+                      </div>
+
+                      {/* RPM progress */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-white/50">
+                          <span>Request Velocity (RPM)</span>
+                          <span className={usage.limits.rpm_current >= 12 ? 'text-red-400 font-bold' : 'text-primary'}>
+                            {usage.limits.rpm_current} / {usage.limits.rpm_limit}
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-300 rounded-full ${usage.limits.rpm_current >= 12 ? 'bg-red-500' : 'bg-primary'}`}
+                            style={{ width: `${(usage.limits.rpm_current / usage.limits.rpm_limit) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* TPM progress */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-white/50">
+                          <span>Token Volume (TPM)</span>
+                          <span>
+                            {usage.limits.tpm_current.toLocaleString()} / {usage.limits.tpm_limit >= 1000000 ? '1M' : usage.limits.tpm_limit.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min((usage.limits.tpm_current / usage.limits.tpm_limit) * 100, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* RPD progress */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-white/50">
+                          <span>Daily Allocation (RPD)</span>
+                          <span>
+                            {usage.limits.rpd_current} / {usage.limits.rpd_limit}
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-accent rounded-full transition-all duration-300"
+                            style={{ width: `${(usage.limits.rpd_current / usage.limits.rpd_limit) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Last request details */}
+                      {usage.current_request && usage.current_request.total_tokens > 0 && (
+                        <div className="bg-white/5 p-2 rounded-xl grid grid-cols-3 gap-1 text-center border border-white/5 mt-1">
+                          <div className="flex flex-col">
+                            <span className="text-white/30 text-[8px] uppercase">Input</span>
+                            <span className="text-primary font-bold">{usage.current_request.prompt_tokens}t</span>
+                          </div>
+                          <div className="flex flex-col border-x border-white/5">
+                            <span className="text-white/30 text-[8px] uppercase">Output</span>
+                            <span className="text-accent font-bold">{usage.current_request.candidates_tokens}t</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-white/30 text-[8px] uppercase">Total</span>
+                            <span className="text-white font-bold">{usage.current_request.total_tokens}t</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ minHeight: '300px' }}>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar" style={{ minHeight: '300px' }}>
               {messages.map((msg, i) => (
                 <motion.div
                   key={i}
@@ -212,9 +348,9 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
                   animate={{ opacity: 1, y: 0 }}
                   className={`flex ${ msg.role === 'user' ? 'justify-end' : 'justify-start' } gap-2`}
                 >
-                  {(msg.role === 'assistant' || msg.role === 'aura') && (
-                    <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center mt-1" style={{ background: 'linear-gradient(135deg,#00f2ff33,#7000ff33)', border: '1px solid rgba(0,242,255,0.3)' }}>
-                      <Layers size={12} className="text-primary" />
+                  {(msg.role === 'assistant' || msg.role === 'aura' || msg.role === 'model') && (
+                    <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center mt-1 bg-primary/10 border border-primary/30">
+                      <Cpu size={12} className="text-primary animate-pulse" />
                     </div>
                   )}
                   <div
@@ -222,22 +358,23 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
                     style={{
                       background: msg.role === 'user'
                         ? 'linear-gradient(135deg, #7000ff, #00f2ff)'
-                        : 'rgba(255,255,255,0.06)',
+                        : 'rgba(255,255,255,0.05)',
                       borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                      border: (msg.role === 'assistant' || msg.role === 'aura') ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                      border: (msg.role === 'user') ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                      boxShadow: msg.role === 'user' ? '0 10px 20px rgba(112,0,255,0.2)' : 'none',
                       color: 'rgba(255,255,255,0.9)',
                     }}
                   >
-                    {msg.text}
+                    {msg.text || msg.content}
                   </div>
                 </motion.div>
               ))}
               {isLoading && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: 'rgba(0,242,255,0.1)', border: '1px solid rgba(0,242,255,0.3)' }}>
-                    <Layers size={12} className="text-primary" />
+                  <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center bg-primary/10 border border-primary/30">
+                    <Cpu size={12} className="text-primary animate-spin" />
                   </div>
-                  <div className="flex gap-1 px-4 py-3 rounded-2xl" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="flex gap-1.5 px-4 py-3 rounded-2xl bg-white/5 border border-white/10">
                     {[0, 0.2, 0.4].map((d, i) => (
                       <motion.div key={i} animate={{ y: [0, -5, 0] }} transition={{ duration: 0.6, delay: d, repeat: Infinity }} className="w-2 h-2 rounded-full bg-primary" />
                     ))}
@@ -248,7 +385,7 @@ const AuraChatWidget = ({ pilotId, gameState, currentLevel, unlockedLevels, enab
             </div>
 
             {/* Input */}
-            <div className="p-3 border-t border-white/10 flex gap-2">
+            <div className="p-3 border-t border-white/10 flex gap-2 bg-black/20">
               <input
                 ref={inputRef}
                 value={input}

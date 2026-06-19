@@ -1,0 +1,26 @@
+# ── Local Development Overrides ──────────────────────────────────────────────
+# When running "docker compose up", Docker Compose automatically merges this file
+# with the base "docker-compose.yml" file. This mounts local volumes to enable
+# instant hot-reloading for both frontend and backend without rebuilding/restarting.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI backend (with Hot Reloading) ─────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── React / Vite frontend (with Hot Reloading) ───────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume ensures container's node_modules are not overwritten by host
+      - /app/node_modules

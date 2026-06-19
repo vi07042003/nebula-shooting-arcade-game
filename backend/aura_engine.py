@@ -36,6 +36,10 @@ class AuraEngine:
         self.gemini_client = None
         self._genai_types = None
         self._init_gemini()
+        
+        # Track usage stats (sliding windows)
+        self.request_timestamps = []  # List of floats (timestamps of requests)
+        self.token_records = []       # List of tuples (timestamp, token_count)
 
     def _init_gemini(self):
         """Try to load Gemini (optional upgrade). Falls back to Pollinations."""
@@ -50,6 +54,46 @@ class AuraEngine:
             print("✓ AURA using Gemini Flash (upgraded mode).")
         except Exception as e:
             print(f"Gemini init failed: {e} — falling back to Pollinations.")
+
+    def _track_usage(self, token_count: int):
+        import time
+        now = time.time()
+        
+        # Log request and tokens
+        self.request_timestamps.append(now)
+        if token_count > 0:
+            self.token_records.append((now, token_count))
+        
+        # Prune old logs (RPM/TPM = last 60s, RPD = last 24 hours)
+        one_min_ago = now - 60
+        one_day_ago = now - 86400
+        
+        self.request_timestamps = [t for t in self.request_timestamps if t >= one_day_ago]
+        self.token_records = [(t, c) for (t, c) in self.token_records if t >= one_min_ago]
+
+    def _get_usage_stats(self) -> dict:
+        import time
+        now = time.time()
+        one_min_ago = now - 60
+        
+        # Calculate RPM (requests in last 60 seconds)
+        rpm_current = sum(1 for t in self.request_timestamps if t >= one_min_ago)
+        
+        # Calculate TPM (tokens in last 60 seconds)
+        tpm_current = sum(c for (t, c) in self.token_records if t >= one_min_ago)
+        
+        # Calculate RPD (requests in last 24 hours)
+        rpd_current = len(self.request_timestamps)
+        
+        # Standard free-tier limits for Gemini 2.0 Flash
+        return {
+            "rpm_limit": 15,
+            "rpm_current": rpm_current,
+            "tpm_limit": 1000000,
+            "tpm_current": tpm_current,
+            "rpd_limit": 1500,
+            "rpd_current": rpd_current
+        }
 
     # ── Primary: Pollinations (always free, no key) ─────────────────────────
     def _call_pollinations(self, history: list, user_message: str) -> str:
@@ -93,12 +137,16 @@ class AuraEngine:
         return "Tactical processor is under high load right now. Give me a moment and resend your query."
 
     # ── Public API ───────────────────────────────────────────────────────────
-    def chat(self, history: list, user_message: str, context: str = "") -> str:
+    def chat(self, history: list, user_message: str, context: str = "") -> dict:
         # Inject context invisibly
         query = f"[System Context: {context}]\n\n{user_message}" if context else user_message
 
-        # Convert DB history format [{"role": "user", "content": "..."}, ...]
         reply = None
+        prompt_tokens = 0
+        candidates_tokens = 0
+        total_tokens = 0
+        is_gemini_success = False
+
         if self.gemini_client:
             # Convert to Gemini format
             gemini_history = [
@@ -118,14 +166,41 @@ class AuraEngine:
                 )
                 response = chat.send_message(query)
                 reply = response.text
+                
+                # Retrieve token usage from response
+                usage_meta = getattr(response, "usage_metadata", None)
+                if usage_meta:
+                    prompt_tokens = getattr(usage_meta, "prompt_token_count", 0)
+                    candidates_tokens = getattr(usage_meta, "candidates_token_count", 0)
+                    total_tokens = getattr(usage_meta, "total_token_count", 0)
+                
+                is_gemini_success = True
             except Exception as e:
                 print(f"Gemini error: {e} — falling back to Pollinations.")
         
         # Fall through to Pollinations
         if not reply:
             reply = self._call_pollinations(history, query)
+            # Estimate tokens roughly for Pollinations (approx 4 chars per token)
+            prompt_tokens = len(query) // 4
+            candidates_tokens = len(reply) // 4
+            total_tokens = prompt_tokens + candidates_tokens
 
-        return reply
+        # Record this request for rate tracking
+        self._track_usage(total_tokens)
+
+        return {
+            "reply": reply,
+            "usage": {
+                "active_model": "Gemini 2.0 Flash" if is_gemini_success else "Pollinations AI (Free Tier)",
+                "current_request": {
+                    "prompt_tokens": prompt_tokens,
+                    "candidates_tokens": candidates_tokens,
+                    "total_tokens": total_tokens
+                },
+                "limits": self._get_usage_stats()
+            }
+        }
 
     # ── Post-mission debrief (deterministic, no AI call needed) ─────────────
     def get_debrief(self, score: int, level: int, succeeded: bool) -> dict:

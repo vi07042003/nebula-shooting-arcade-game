@@ -26,7 +26,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: nebula_backend_dev
     restart: unless-stopped
     ports:
@@ -47,7 +47,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: nebula_frontend_dev
     restart: unless-stopped
     ports:
