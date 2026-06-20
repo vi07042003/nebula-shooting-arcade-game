@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, RefreshCcw, Home, Settings, Pause, ChevronRight, Zap, Skull, ShieldAlert, X, Shield, Timer, Zap as RapidIcon, Layers } from 'lucide-react';
+import { Play, RefreshCcw, Home, Settings, Pause, ChevronRight, Zap, Skull, ShieldAlert, X, Shield, Timer, Zap as RapidIcon, Layers, Cpu } from 'lucide-react';
+import axios from 'axios';
 
 const ShootingGame = ({ 
   level, 
@@ -21,7 +22,8 @@ const ShootingGame = ({
   maxHealth = 100,
   damageMultiplier = 1.0,
   fireRateMultiplier = 1.0,
-  fuelUsageMultiplier = 1.0
+  fuelUsageMultiplier = 1.0,
+  pilotHighScore = 0
 }) => {
   const gs = gestureSettings || {
     detectionConfidence: 0.5,
@@ -38,6 +40,9 @@ const ShootingGame = ({
   const [activeEffects, setActiveEffects] = useState({ shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 });
   const [glitchActive, setGlitchActive] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [currentDimension, setCurrentDimension] = useState('physical');
+  const [activeDialogue, setActiveDialogue] = useState(null);
+
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
   const requestRef = useRef();
   
@@ -210,7 +215,10 @@ const ShootingGame = ({
     teleportCharging: false,
     teleportTargetX: undefined,
     teleportTargetY: undefined,
-    effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 }
+    effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 },
+    currentDimension: 'physical',
+    bossLoading: false,
+    drone: { x: 0, y: 0, targetX: 0, targetY: 0, w: 35, h: 35, lastShot: 0, syncPercent: 0 }
   });
 
   const resetGame = () => {
@@ -229,7 +237,10 @@ const ShootingGame = ({
         teleportCharging: false,
         teleportTargetX: undefined,
         teleportTargetY: undefined,
-        effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 }
+        effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 },
+        currentDimension: 'physical',
+        bossLoading: false,
+        drone: { x: 0, y: 0, targetX: 0, targetY: 0, w: 35, h: 35, lastShot: 0, syncPercent: 0 }
     };
     setScore(0);
     setHealth(maxHealth);
@@ -237,6 +248,8 @@ const ShootingGame = ({
     setBossHealth(null);
     setIsPaused(false);
     setGlitchActive(false);
+    setCurrentDimension('physical');
+    setActiveDialogue(null);
     setActiveEffects({ shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 });
   };
 
@@ -295,7 +308,17 @@ const ShootingGame = ({
   };
 
   useEffect(() => {
+    // Clear processed images to trigger re-process
+    processedImages.current.player = null;
+    processedImages.current.enemy = null;
+    processedImages.current.enemyTank = null;
+    processedImages.current.enemySpeeder = null;
+    processedImages.current.enemyHeavy = null;
+    processedImages.current.boss = null;
+    images.current.ready = false;
+
     images.current.player.src = planeImageSrc ? `${planeImageSrc}?v=3` : '/player.png?v=3';
+
     images.current.enemy.src = '/enemy.png';
     images.current.enemyTank.src = '/enemy_tank.png';
     images.current.enemySpeeder.src = '/enemy_speeder.png';
@@ -305,23 +328,51 @@ const ShootingGame = ({
 
     const handleLoad = () => {
       const im = images.current;
-      if (im.player.complete && im.enemy.complete && im.enemyTank.complete && 
-          im.enemySpeeder.complete && im.enemyHeavy.complete && im.boss.complete) {
-        processedImages.current.player = processImage(im.player, 80, 1.1, 0);
-        processedImages.current.enemy = processImage(im.enemy, 45, 1.0, 0);
-        processedImages.current.enemyTank = processImage(im.enemyTank, 45, 1.0, 0); 
+      let allRequiredProcessed = true;
+
+      if (im.player.complete && im.player.width > 0) {
+        if (!processedImages.current.player) {
+          processedImages.current.player = processImage(im.player, 80, 1.1, 0);
+        }
+      } else {
+        allRequiredProcessed = false;
+      }
+
+      if (im.enemy.complete && im.enemy.width > 0) {
+        if (!processedImages.current.enemy) {
+          processedImages.current.enemy = processImage(im.enemy, 45, 1.0, 0);
+        }
+      } else {
+        allRequiredProcessed = false;
+      }
+
+      if (im.enemyTank.complete && im.enemyTank.width > 0 && !processedImages.current.enemyTank) {
+        processedImages.current.enemyTank = processImage(im.enemyTank, 45, 1.0, 0);
+      }
+      if (im.enemySpeeder.complete && im.enemySpeeder.width > 0 && !processedImages.current.enemySpeeder) {
         processedImages.current.enemySpeeder = processImage(im.enemySpeeder, 45, 1.0, 0);
+      }
+      if (im.enemyHeavy.complete && im.enemyHeavy.width > 0 && !processedImages.current.enemyHeavy) {
         processedImages.current.enemyHeavy = processImage(im.enemyHeavy, 45, 1.0, 0);
-        processedImages.current.boss = processImage(im.boss, 45, 1.0, level * 45); 
+      }
+      if (im.boss.complete && im.boss.width > 0 && !processedImages.current.boss) {
+        processedImages.current.boss = processImage(im.boss, 45, 1.0, level * 45);
+      }
+
+      if (allRequiredProcessed) {
         images.current.ready = true;
       }
     };
+
     images.current.player.onload = handleLoad;
     images.current.enemy.onload = handleLoad;
     images.current.enemyTank.onload = handleLoad;
     images.current.enemySpeeder.onload = handleLoad;
     images.current.enemyHeavy.onload = handleLoad;
     images.current.boss.onload = handleLoad;
+
+    // Immediately invoke handleLoad in case images are already complete or cached!
+    handleLoad();
     
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -338,6 +389,25 @@ const ShootingGame = ({
     const onKeyDown = (e) => { 
         gameState.current.keys[e.code] = true; 
         if (e.code === 'Escape') setIsPaused(prev => !prev);
+        if (e.code === 'KeyR') {
+            const nextDim = gameState.current.currentDimension === 'physical' ? 'ether' : 'physical';
+            gameState.current.currentDimension = nextDim;
+            setCurrentDimension(nextDim);
+            
+            const player = gameState.current.player;
+            for (let k = 0; k < 25; k++) {
+                gameState.current.particles.push({
+                    x: player.x,
+                    y: player.y,
+                    vx: (Math.random() - 0.5) * 16,
+                    vy: (Math.random() - 0.5) * 16,
+                    life: 1.0,
+                    color: nextDim === 'physical' ? '#00f2ff' : '#ff00ff',
+                    size: 3 + Math.random() * 4
+                });
+            }
+            gameState.current.shake = 10;
+        }
     };
     const onKeyUp = (e) => gameState.current.keys[e.code] = false;
     window.addEventListener('keydown', onKeyDown);
@@ -357,7 +427,17 @@ const ShootingGame = ({
           TANK: { w: 105, h: 105, speed: 2.8, hp: 6, color: '#33ff88', img: 'enemyTank' },
           HEAVY: { w: 135, h: 135, speed: 2.2, hp: 12, color: '#ff33ff', img: 'enemyHeavy' }
         }[type];
-        gameState.current.enemies.push({ x: Math.random() * (canvas.width - 150) + 75, y: -150, ...cfg, type, currentHp: cfg.hp });
+        const dimension = (level > 2 && Math.random() > 0.7) ? 'ether' : 'physical';
+        const color = dimension === 'ether' ? '#ff00ff' : cfg.color;
+        gameState.current.enemies.push({ 
+            x: Math.random() * (canvas.width - 150) + 75, 
+            y: -150, 
+            ...cfg, 
+            color,
+            type, 
+            currentHp: cfg.hp, 
+            dimension 
+        });
         gameState.current.lastEnemySpawn = timestamp;
       }
     };
@@ -559,11 +639,14 @@ const ShootingGame = ({
                   setFuel(Math.ceil(gameState.current.fuel));
               }
               else if (p.id === 'missiles') {
+                  const pDim = gameState.current.currentDimension;
                   for (let j = enemies.length - 1; j >= 0; j--) {
-                      enemies[j].currentHp -= 10;
-                      if (enemies[j].currentHp <= 0) {
-                          gameState.current.score += 200;
-                          setScore(gameState.current.score);
+                      if (enemies[j].dimension === pDim) {
+                          enemies[j].currentHp -= 10;
+                          if (enemies[j].currentHp <= 0) {
+                              gameState.current.score += 200;
+                              setScore(gameState.current.score);
+                          }
                       }
                   }
               }
@@ -588,24 +671,25 @@ const ShootingGame = ({
       // FIRING LOGIC
       const cooldown = (effects.rapidfire > 0 ? 50 : 100) * fireRateMultiplier;
       if ((keys[controls.fire] || keys['Space']) && timestamp - gameState.current.lastFire > cooldown) {
+        const pDim = gameState.current.currentDimension;
         if (effects.laser > 0) {
-            projectiles.push({ x: player.x, y: player.y - 120, vy: -50, vx: 0, size: 15, color: '#ff0033' });
+            projectiles.push({ x: player.x, y: player.y - 120, vy: -50, vx: 0, size: 15, color: '#ff0033', dimension: pDim });
         } else if (effects.multishot > 0) {
-            projectiles.push({ x: player.x, y: player.y - 45, vy: -22, vx: 0, size: 7, color: '#00f2ff' });
-            projectiles.push({ x: player.x, y: player.y - 45, vy: -21, vx: -5, size: 7, color: '#00f2ff' });
-            projectiles.push({ x: player.x, y: player.y - 45, vy: -21, vx: 5, size: 7, color: '#00f2ff' });
+            projectiles.push({ x: player.x, y: player.y - 45, vy: -22, vx: 0, size: 7, color: '#00f2ff', dimension: pDim });
+            projectiles.push({ x: player.x, y: player.y - 45, vy: -21, vx: -5, size: 7, color: '#00f2ff', dimension: pDim });
+            projectiles.push({ x: player.x, y: player.y - 45, vy: -21, vx: 5, size: 7, color: '#00f2ff', dimension: pDim });
         } else {
-            projectiles.push({ x: player.x, y: player.y - 45, vy: -22, vx: 0, size: 7, color: '#00f2ff' });
+            projectiles.push({ x: player.x, y: player.y - 45, vy: -22, vx: 0, size: 7, color: '#00f2ff', dimension: pDim });
         }
         
         if (effects.sidecannons > 0 && !effects.laser) {
-            projectiles.push({ x: player.x - 40, y: player.y - 10, vy: -15, vx: -12, size: 6, color: '#ffff00' });
-            projectiles.push({ x: player.x + 40, y: player.y - 10, vy: -15, vx: 12, size: 6, color: '#ffff00' });
+            projectiles.push({ x: player.x - 40, y: player.y - 10, vy: -15, vx: -12, size: 6, color: '#ffff00', dimension: pDim });
+            projectiles.push({ x: player.x + 40, y: player.y - 10, vy: -15, vx: 12, size: 6, color: '#ffff00', dimension: pDim });
         }
         
         if (effects.drone > 0 && !effects.laser) {
-             projectiles.push({ x: player.x - 60, y: player.y + 20, vy: -20, vx: 0, size: 4, color: '#aaff00' });
-             projectiles.push({ x: player.x + 60, y: player.y + 20, vy: -20, vx: 0, size: 4, color: '#aaff00' });
+             projectiles.push({ x: player.x - 60, y: player.y + 20, vy: -20, vx: 0, size: 4, color: '#aaff00', dimension: pDim });
+             projectiles.push({ x: player.x + 60, y: player.y + 20, vy: -20, vx: 0, size: 4, color: '#aaff00', dimension: pDim });
         }
         
         gameState.current.lastFire = timestamp; player.recoil = 5;
@@ -622,43 +706,252 @@ const ShootingGame = ({
       
       for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
         enemyProjectiles[i].y += enemyProjectiles[i].vy * worldSpeed; 
+        if (enemyProjectiles[i].vx) enemyProjectiles[i].x += enemyProjectiles[i].vx * worldSpeed;
         if (enemyProjectiles[i].y > canvas.height + 50) enemyProjectiles.splice(i, 1);
-        if (Math.sqrt((enemyProjectiles[i].x-player.x)**2 + (enemyProjectiles[i].y-player.y)**2) < 42) {
-            enemyProjectiles.splice(i, 1); setHealth(prev => { const n = prev - 12; if (n <= 0) endGame(); return n; }); gameState.current.shake = 10;
+        
+        const epDim = enemyProjectiles[i].dimension || 'physical';
+        if (epDim === gameState.current.currentDimension) {
+            if (Math.sqrt((enemyProjectiles[i].x-player.x)**2 + (enemyProjectiles[i].y-player.y)**2) < 42) {
+                enemyProjectiles.splice(i, 1); setHealth(prev => { const n = prev - 12; if (n <= 0) endGame(); return n; }); gameState.current.shake = 10;
+            }
         }
       }
 
-      if (isBossLevel && gameState.current.score >= targetScore && !boss) {
+      // BOSS GENERATION TRIGGER (AI INTEGRATION)
+      if (isBossLevel && gameState.current.score >= targetScore && !boss && !gameState.current.bossLoading) {
         gameState.current.enemies = [];
-        const bossHp = level * 30;
-        gameState.current.boss = { x: canvas.width / 2, y: -450, w: 450, h: 450, targetX: canvas.width / 2, targetY: 220, hp: bossHp, currentHp: bossHp, color: '#ff0000', lastShot: 0, flash: 0, phase: 1 };
-        setBossHealth(100); gameState.current.shake = 30;
+        gameState.current.bossLoading = true;
+        
+        axios.post('http://localhost:8000/ai/boss-generation', {
+            level: level,
+            high_score: pilotHighScore,
+            selected_ship: selectedPlane
+        }).then(res => {
+            const data = res.data;
+            
+            if (data.dialogue && data.dialogue.length > 0) {
+                setActiveDialogue({
+                    name: data.name,
+                    text: data.dialogue[0],
+                    dialogueLines: data.dialogue,
+                    currentIndex: 0,
+                    color: data.color
+                });
+            }
+            
+            const bossImg = new Image();
+            bossImg.src = `https://image.pollinations.ai/prompt/${encodeURIComponent(data.imagePrompt)}?width=256&height=256&nologo=true`;
+            bossImg.onload = () => {
+                processedImages.current.boss = processImage(bossImg, 45, 1.0, 0);
+                const bossHp = level * 45;
+                
+                gameState.current.boss = {
+                    x: canvas.width / 2,
+                    y: -450,
+                    w: 320,
+                    h: 320,
+                    targetX: canvas.width / 2,
+                    targetY: 220,
+                    hp: bossHp,
+                    currentHp: bossHp,
+                    color: data.color || '#ff0000',
+                    name: data.name,
+                    description: data.description,
+                    bulletPattern: data.bulletPattern || 'spiral',
+                    lastShot: 0,
+                    flash: 0,
+                    phase: 1,
+                    laserCharge: 0,
+                    laserSweepAngle: 0,
+                    dialogueTimer: 450
+                };
+                setBossHealth(100);
+                gameState.current.shake = 30;
+                gameState.current.bossLoading = false;
+            };
+            bossImg.onerror = () => {
+                processedImages.current.boss = processedImages.current.boss || processImage(images.current.boss, 45, 1.0, level * 45);
+                const bossHp = level * 35;
+                gameState.current.boss = {
+                    x: canvas.width / 2,
+                    y: -450,
+                    w: 320,
+                    h: 320,
+                    targetX: canvas.width / 2,
+                    targetY: 220,
+                    hp: bossHp,
+                    currentHp: bossHp,
+                    color: data.color || '#ff0000',
+                    name: data.name,
+                    description: data.description,
+                    bulletPattern: data.bulletPattern || 'spiral',
+                    lastShot: 0,
+                    flash: 0,
+                    phase: 1,
+                    laserCharge: 0,
+                    laserSweepAngle: 0,
+                    dialogueTimer: 450
+                };
+                setBossHealth(100);
+                gameState.current.shake = 30;
+                gameState.current.bossLoading = false;
+            };
+        }).catch(err => {
+            console.error("AI boss generation failure, reverting to default boss config", err);
+            const bossHp = level * 30;
+            processedImages.current.boss = processedImages.current.boss || processImage(images.current.boss, 45, 1.0, level * 45);
+            gameState.current.boss = { 
+                x: canvas.width / 2, 
+                y: -450, 
+                w: 450, 
+                h: 450, 
+                targetX: canvas.width / 2, 
+                targetY: 220, 
+                hp: bossHp, 
+                currentHp: bossHp, 
+                color: '#ff0000', 
+                name: "Nexus Overlord",
+                description: "AI-Controlled Defense Cruiser",
+                bulletPattern: 'spiral',
+                lastShot: 0, 
+                flash: 0, 
+                phase: 1,
+                dialogueTimer: 300
+            };
+            setBossHealth(100);
+            gameState.current.shake = 30;
+            gameState.current.bossLoading = false;
+        });
       } else if (!isBossLevel && gameState.current.score >= targetScore && !gameState.current.levelWon) {
         gameState.current.levelWon = true; setTimeout(() => onGameOver(gameState.current.score, true), 1000);
       }
 
       if (boss) {
-        boss.y += (boss.targetY - boss.y) * 0.03 * worldSpeed; boss.x += Math.sin(timestamp / 400) * 5 * worldSpeed;
+        boss.y += (boss.targetY - boss.y) * 0.03 * worldSpeed; 
+        boss.x += Math.sin(timestamp / 400) * 5 * worldSpeed;
         if (boss.flash > 0) boss.flash -= 0.1;
         if (boss.currentHp < boss.hp * 0.5) boss.phase = 2;
-        const shotDelay = boss.phase === 2 ? 600 : 1200;
-        if (timestamp - boss.lastShot > (shotDelay - level * 30) / worldSpeed) {
-            const count = boss.phase === 2 ? 10 : 6;
-            for(let a=0; a<count; a++) {
-                const spread = (a - (count/2)) * 60;
-                enemyProjectiles.push({ x: boss.x + spread, y: boss.y + 100, vy: 5 + level/3, color: '#ff3333' });
-            }
-            boss.lastShot = timestamp;
+        
+        if (boss.dialogueTimer > 0) {
+            boss.dialogueTimer -= 1;
+            if (boss.dialogueTimer === 0) setActiveDialogue(null);
         }
+
+        const pattern = boss.bulletPattern || 'spiral';
+        const shotDelay = boss.phase === 2 ? 550 : 1100;
+        
+        if (pattern === 'ring') {
+            if (timestamp - boss.lastShot > (shotDelay - level * 20) / worldSpeed) {
+                const bulletCount = boss.phase === 2 ? 16 : 10;
+                for (let a = 0; a < bulletCount; a++) {
+                    const angle = (a / bulletCount) * Math.PI * 2;
+                    enemyProjectiles.push({
+                        x: boss.x,
+                        y: boss.y + 20,
+                        vx: Math.cos(angle) * (4 + level * 0.2),
+                        vy: Math.sin(angle) * (4 + level * 0.2),
+                        color: boss.color,
+                        dimension: gameState.current.currentDimension
+                    });
+                }
+                boss.lastShot = timestamp;
+            }
+        } else if (pattern === 'spiral') {
+            if (timestamp - boss.lastShot > 85 / worldSpeed) {
+                const angle = (timestamp / 110) % (Math.PI * 2);
+                enemyProjectiles.push({
+                    x: boss.x,
+                    y: boss.y + 20,
+                    vx: Math.cos(angle) * (5 + level * 0.2),
+                    vy: Math.sin(angle) * (5 + level * 0.2),
+                    color: boss.color,
+                    dimension: gameState.current.currentDimension
+                });
+                
+                if (boss.phase === 2) {
+                    enemyProjectiles.push({
+                        x: boss.x,
+                        y: boss.y + 20,
+                        vx: Math.cos(angle + Math.PI) * (5 + level * 0.2),
+                        vy: Math.sin(angle + Math.PI) * (5 + level * 0.2),
+                        color: '#ffffff',
+                        dimension: gameState.current.currentDimension
+                    });
+                }
+                boss.lastShot = timestamp;
+            }
+        } else if (pattern === 'laser_sweep') {
+            if (boss.laserCharge === undefined) boss.laserCharge = 0;
+            if (boss.laserSweepAngle === undefined) boss.laserSweepAngle = -0.5;
+            
+            if (timestamp - boss.lastShot > 3200 / worldSpeed) {
+                boss.laserCharge = 1;
+                boss.lastShot = timestamp;
+            }
+            
+            if (boss.laserCharge > 0) {
+                boss.laserCharge += 1 * worldSpeed;
+                if (boss.laserCharge > 90) {
+                    const lAngle = -0.6 + Math.sin(timestamp / 250) * 1.2;
+                    boss.laserSweepAngle = lAngle;
+                    
+                    const laserLength = canvas.height;
+                    const endX = boss.x + Math.sin(lAngle) * laserLength;
+                    const endY = boss.y + Math.cos(lAngle) * laserLength;
+                    
+                    const px = player.x;
+                    const py = player.y;
+                    const bx = boss.x;
+                    const by = boss.y;
+                    
+                    const l2 = (endX - bx)**2 + (endY - by)**2;
+                    let t = ((px - bx) * (endX - bx) + (py - by) * (endY - by)) / l2;
+                    t = Math.max(0, Math.min(1, t));
+                    const projX = bx + t * (endX - bx);
+                    const projY = by + t * (endY - by);
+                    
+                    const distToLaser = Math.sqrt((px - projX)**2 + (py - projY)**2);
+                    if (distToLaser < 45 && gameState.current.currentDimension === 'physical') {
+                        setHealth(prev => { const n = prev - 0.75 * worldSpeed; if (n <= 0) endGame(); return n; });
+                        gameState.current.shake = 3;
+                    }
+                    
+                    if (boss.laserCharge > 210) {
+                        boss.laserCharge = 0;
+                    }
+                }
+            } else {
+                if (timestamp - boss.lastShot > 1400 / worldSpeed) {
+                    const dx = player.x - boss.x;
+                    const dy = player.y - boss.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    enemyProjectiles.push({
+                        x: boss.x,
+                        y: boss.y + 40,
+                        vx: (dx / dist) * 4,
+                        vy: (dy / dist) * 4,
+                        color: boss.color,
+                        dimension: 'physical'
+                    });
+                    boss.lastShot = timestamp;
+                }
+            }
+        }
+        
         for (let j = projectiles.length - 1; j >= 0; j--) {
-            if (Math.sqrt((boss.x-projectiles[j].x)**2 + (boss.y-projectiles[j].y)**2) < boss.w / 2.1) {
-                boss.currentHp -= damageMultiplier; boss.flash = 1.0; projectiles.splice(j, 1);
-                setBossHealth(Math.max(0, (boss.currentHp / boss.hp) * 100));
-                if (boss.currentHp <= 0) {
-                    gameState.current.score += 10000; setScore(gameState.current.score);
-                    for(let k=0; k<150; k++) particles.push({ x: boss.x, y: boss.y, vx: (Math.random()-0.5)*40, vy: (Math.random()-0.5)*40, life: 2.5, color: '#ffaa00', size: 10 });
-                    gameState.current.boss = null; gameState.current.levelWon = true;
-                    setTimeout(() => onGameOver(gameState.current.score, true), 2500);
+            const projDim = projectiles[j].dimension || 'physical';
+            if (projDim === gameState.current.currentDimension) {
+                if (Math.sqrt((boss.x-projectiles[j].x)**2 + (boss.y-projectiles[j].y)**2) < boss.w / 2.1) {
+                    boss.currentHp -= damageMultiplier; boss.flash = 1.0; projectiles.splice(j, 1);
+                    setBossHealth(Math.max(0, (boss.currentHp / boss.hp) * 100));
+                    if (boss.currentHp <= 0) {
+                        gameState.current.score += 10000; setScore(gameState.current.score);
+                        for(let k=0; k<150; k++) particles.push({ x: boss.x, y: boss.y, vx: (Math.random()-0.5)*40, vy: (Math.random()-0.5)*40, life: 2.5, color: '#ffaa00', size: 10 });
+                        gameState.current.boss = null; 
+                        setActiveDialogue(null);
+                        gameState.current.levelWon = true;
+                        setTimeout(() => onGameOver(gameState.current.score, true), 2500);
+                    }
                 }
             }
         }
@@ -666,19 +959,26 @@ const ShootingGame = ({
 
       for (let i = enemies.length - 1; i >= 0; i--) {
         enemies[i].y += enemies[i].speed * worldSpeed; if (enemies[i].type === 'SPEEDER') enemies[i].x += Math.sin(timestamp / 70) * 10 * worldSpeed;
-        if (Math.sqrt((enemies[i].x-player.x)**2 + (enemies[i].y-player.y)**2) < 58) {
-          enemies.splice(i, 1); gameState.current.shake = 18; setHealth(prev => { const n = prev - 25; if (n <= 0) endGame(); return n; }); continue;
+        
+        if (enemies[i].dimension === gameState.current.currentDimension) {
+            if (Math.sqrt((enemies[i].x-player.x)**2 + (enemies[i].y-player.y)**2) < 58) {
+              enemies.splice(i, 1); gameState.current.shake = 18; setHealth(prev => { const n = prev - 25; if (n <= 0) endGame(); return n; }); continue;
+            }
         }
+        
         for (let j = projectiles.length - 1; j >= 0; j--) {
-          if (Math.sqrt((enemies[i].x-projectiles[j].x)**2 + (enemies[i].y-projectiles[j].y)**2) < enemies[i].w/1.7) {
-            enemies[i].currentHp -= damageMultiplier; projectiles.splice(j, 1);
-            if (enemies[i].currentHp <= 0) {
-              dropPowerup(enemies[i].x, enemies[i].y);
-              const pts = { STANDARD: 100, SPEEDER: 250, TANK: 450, HEAVY: 800 }[enemies[i].type];
-              for(let k=0; k<25; k++) particles.push({ x: enemies[i].x, y: enemies[i].y, vx: (Math.random()-0.5)*18, vy: (Math.random()-0.5)*18, life: 1, color: enemies[i].color, size: 4 });
-              enemies.splice(i, 1); gameState.current.score += pts; setScore(gameState.current.score);
-            } else { for(let k=0; k<6; k++) particles.push({ x: projectiles[j].x, y: projectiles[j].y, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12, life: 0.5, color: '#fff', size: 3 }); }
-            break;
+          const projDim = projectiles[j].dimension || 'physical';
+          if (enemies[i].dimension === projDim) {
+              if (Math.sqrt((enemies[i].x-projectiles[j].x)**2 + (enemies[i].y-projectiles[j].y)**2) < enemies[i].w/1.7) {
+                enemies[i].currentHp -= damageMultiplier; projectiles.splice(j, 1);
+                if (enemies[i].currentHp <= 0) {
+                  dropPowerup(enemies[i].x, enemies[i].y);
+                  const pts = { STANDARD: 100, SPEEDER: 250, TANK: 450, HEAVY: 800 }[enemies[i].type];
+                  for(let k=0; k<25; k++) particles.push({ x: enemies[i].x, y: enemies[i].y, vx: (Math.random()-0.5)*18, vy: (Math.random()-0.5)*18, life: 1, color: enemies[i].color, size: 4 });
+                  enemies.splice(i, 1); gameState.current.score += pts; setScore(gameState.current.score);
+                } else { for(let k=0; k<6; k++) particles.push({ x: projectiles[j].x, y: projectiles[j].y, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12, life: 0.5, color: '#fff', size: 3 }); }
+                break;
+              }
           }
         }
         if (enemies[i] && enemies[i].y > canvas.height + 250) enemies.splice(i, 1);
@@ -699,22 +999,72 @@ const ShootingGame = ({
       ctx.save();
       if (gameState.current.shake > 0.1) ctx.translate((Math.random()-0.5)*gameState.current.shake, (Math.random()-0.5)*gameState.current.shake);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Shift nebula background styling slightly when shifted
+      ctx.save();
+      if (gameState.current.currentDimension === 'ether') {
+          ctx.filter = 'hue-rotate(240deg) brightness(0.65) saturate(1.4)';
+      }
       ctx.drawImage(images.current.background, 0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#fff'; gameState.current.stars.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill(); });
+      ctx.restore();
+      
+      // Shift star colors based on dimension
+      ctx.fillStyle = gameState.current.currentDimension === 'physical' ? '#fff' : '#ff00ff';
+      gameState.current.stars.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill(); });
 
       if (images.current.ready) {
         if (gameState.current.boss) {
             const b = gameState.current.boss; ctx.save(); ctx.translate(b.x, b.y);
+            
+            // Sweep laser sweep guide lines
+            if (b.bulletPattern === 'laser_sweep' && b.laserCharge > 0) {
+                const laserAngle = b.laserSweepAngle || 0;
+                ctx.save();
+                ctx.rotate(laserAngle);
+                
+                if (b.laserCharge <= 90) {
+                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)';
+                    ctx.lineWidth = 2 + Math.sin(Date.now() / 20) * 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(0, canvas.height);
+                    ctx.stroke();
+                } else {
+                    ctx.shadowBlur = 40;
+                    ctx.shadowColor = b.color;
+                    const beamGrad = ctx.createLinearGradient(-35, 0, 35, 0);
+                    beamGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+                    beamGrad.addColorStop(0.3, b.color);
+                    beamGrad.addColorStop(0.5, '#ffffff');
+                    beamGrad.addColorStop(0.7, b.color);
+                    beamGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                    ctx.fillStyle = beamGrad;
+                    ctx.fillRect(-35, 0, 70, canvas.height);
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(-10, 0, 20, canvas.height);
+                }
+                ctx.restore();
+            }
+            
             if (b.flash > 0) ctx.filter = `brightness(${1 + b.flash * 4})`;
-            ctx.shadowBlur = 60; ctx.shadowColor = b.phase === 2 ? '#ff6600' : '#ff0000';
+            ctx.shadowBlur = 60; ctx.shadowColor = b.phase === 2 ? '#ff6600' : b.color;
             ctx.drawImage(processedImages.current.boss, -b.w/2, -b.h/2, b.w, b.h);
-            ctx.beginPath(); ctx.arc(0, 0, 30 + Math.sin(Date.now()/100)*10, 0, Math.PI*2); ctx.fillStyle = b.phase === 2 ? '#ffcc00' : '#ff3300'; ctx.fill(); ctx.restore();
+            ctx.beginPath(); ctx.arc(0, 0, 30 + Math.sin(Date.now()/100)*10, 0, Math.PI*2); ctx.fillStyle = b.phase === 2 ? '#ffcc00' : b.color; ctx.fill(); ctx.restore();
         }
+        
         gameState.current.enemies.forEach(e => {
             const img = processedImages.current[e.img]; ctx.save(); ctx.translate(e.x, e.y);
+            
+            // Faded grayscale styling if enemy exists in alternate dimension
+            if (e.dimension !== gameState.current.currentDimension) {
+                ctx.globalAlpha = 0.18;
+                ctx.filter = 'grayscale(1) brightness(0.4)';
+            }
+            
             if (e.type === 'TANK') { ctx.beginPath(); ctx.arc(0, 0, e.w*0.75, 0, Math.PI*2); ctx.strokeStyle = '#00ff6644'; ctx.lineWidth = 4; ctx.stroke(); }
             ctx.shadowBlur = 25; ctx.shadowColor = e.color; ctx.drawImage(img, -e.w/2, -e.h/2, e.w, e.h); ctx.restore();
-            if (e.hp > 1) {
+            if (e.hp > 1 && e.dimension === gameState.current.currentDimension) {
                 const hpW = (e.currentHp / e.hp) * e.w; ctx.fillStyle = '#111'; ctx.fillRect(e.x - e.w/2, e.y - e.h/2 - 20, e.w, 8); ctx.fillStyle = e.color; ctx.fillRect(e.x - e.w/2, e.y - e.h/2 - 20, hpW, 8);
             }
         });
@@ -722,17 +1072,16 @@ const ShootingGame = ({
         gameState.current.powerups.forEach(p => {
             const glow = 20 + Math.sin(Date.now()/150) * 10;
             ctx.save(); ctx.translate(p.x, p.y);
-            // Pulsing Outer Ring
             ctx.strokeStyle = p.color; ctx.lineWidth = 3; ctx.setLineDash([5, 5]);
             ctx.beginPath(); ctx.arc(0, 0, 28 + Math.sin(Date.now()/200)*6, 0, Math.PI*2); ctx.stroke();
             ctx.setLineDash([]);
-            // Glowing Core
             ctx.shadowBlur = glow; ctx.shadowColor = p.color;
             ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI*2); ctx.fill();
-            // Icon
             ctx.shadowBlur = 0; ctx.fillStyle = '#000'; ctx.font = '22px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(p.char, 0, 0); ctx.restore();
         });
+
+
 
         ctx.save();
         ctx.translate(gameState.current.player.x, gameState.current.player.y);
@@ -742,7 +1091,6 @@ const ShootingGame = ({
         
         const effects = gameState.current.effects;
         
-        // Draw Power-Up Auras behind player
         if (effects.shield > 0) {
             ctx.beginPath(); ctx.arc(0, 0, 50 + Math.sin(Date.now()/100)*5, 0, Math.PI*2);
             ctx.strokeStyle = `rgba(0, 242, 255, ${0.4 + Math.sin(Date.now()/150)*0.3})`;
@@ -755,7 +1103,6 @@ const ShootingGame = ({
             ctx.setLineDash([10, 15]); ctx.lineWidth = 3; ctx.stroke(); ctx.setLineDash([]);
         }
         
-        // DRAW GRAVITY LEASH BEAM
         if (gameState.current.leash) {
             ctx.beginPath();
             ctx.moveTo(0, 0);
@@ -767,7 +1114,6 @@ const ShootingGame = ({
             ctx.shadowBlur = 0;
         }
 
-        // DRAW CHRONO-ECHO GHOST
         if (gameState.current.echoHistory.length > 60) {
             const echo = gameState.current.echoHistory[0];
             ctx.save();
@@ -785,7 +1131,6 @@ const ShootingGame = ({
         else if (effects.multishot > 0) ctx.shadowColor = '#ff00ff';
         else ctx.shadowColor = '#00f2ff';
         
-        // Dematerialize ship if charging teleport
         if (playModeRef.current === 'gesture' && gameState.current.teleportCharging) {
           ctx.globalAlpha = 0.35 + Math.sin(Date.now() / 50) * 0.15;
           ctx.filter = 'hue-rotate(90deg) saturate(2.5)';
@@ -805,7 +1150,6 @@ const ShootingGame = ({
 
         ctx.restore();      }
 
-      // DRAW TELEPORT TARGET RETICLE
       if (playModeRef.current === 'gesture' && gameState.current.teleportCharging && gameState.current.teleportTargetX !== undefined) {
         const tx = gameState.current.teleportTargetX;
         const ty = gameState.current.teleportTargetY;
@@ -813,7 +1157,6 @@ const ShootingGame = ({
         ctx.save();
         ctx.translate(tx, ty);
         
-        // Holographic pulsing circle
         const pulse = 35 + Math.sin(Date.now() / 80) * 10;
         ctx.strokeStyle = '#ff00ff';
         ctx.lineWidth = 3;
@@ -823,7 +1166,6 @@ const ShootingGame = ({
         ctx.arc(0, 0, pulse, 0, Math.PI * 2);
         ctx.stroke();
         
-        // Crosshairs
         ctx.beginPath();
         ctx.moveTo(-pulse - 10, 0); ctx.lineTo(-pulse + 5, 0);
         ctx.moveTo(pulse + 10, 0); ctx.lineTo(pulse - 5, 0);
@@ -831,7 +1173,6 @@ const ShootingGame = ({
         ctx.moveTo(0, pulse + 10); ctx.lineTo(0, pulse - 5);
         ctx.stroke();
         
-        // Outer warning bracket
         ctx.strokeStyle = '#00f2ff';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
@@ -839,7 +1180,6 @@ const ShootingGame = ({
         ctx.beginPath();
         ctx.arc(0, 0, pulse + 15, Math.PI * 3/4, Math.PI * 5/4); ctx.stroke();
         
-        // Draw mini ghost ship inside reticle
         if (processedImages.current.player) {
           ctx.globalAlpha = 0.4;
           ctx.filter = 'drop-shadow(0 0 8px #ff00ff) saturate(2)';
@@ -851,10 +1191,16 @@ const ShootingGame = ({
       }
 
       gameState.current.projectiles.forEach(p => {
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fillStyle = p.color; ctx.fill(); ctx.shadowBlur = 15; ctx.shadowColor = p.color;
+        const pDim = p.dimension || 'physical';
+        if (pDim === gameState.current.currentDimension) {
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fillStyle = p.color; ctx.fill(); ctx.shadowBlur = 15; ctx.shadowColor = p.color;
+        }
       });
       gameState.current.enemyProjectiles.forEach(p => {
-        ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI*2); ctx.fillStyle = p.color; ctx.fill(); ctx.shadowBlur = 20; ctx.shadowColor = p.color;
+        const pDim = p.dimension || 'physical';
+        if (pDim === gameState.current.currentDimension) {
+            ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI*2); ctx.fillStyle = p.color; ctx.fill(); ctx.shadowBlur = 20; ctx.shadowColor = p.color;
+        }
       });
       gameState.current.particles.forEach(p => { ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size || 4, 0, Math.PI*2); ctx.fill(); });
       ctx.restore();
@@ -862,7 +1208,7 @@ const ShootingGame = ({
 
     requestRef.current = requestAnimationFrame(update);
     return () => { cancelAnimationFrame(requestRef.current); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
-  }, [isPaused, level, onGameOver, controls, planeImageSrc, planeWidth, planeHeight, maxHealth, speedMultiplier, damageMultiplier, fireRateMultiplier, fuelUsageMultiplier]);
+  }, [isPaused, level, onGameOver, controls, planeImageSrc, planeWidth, planeHeight, maxHealth, speedMultiplier, damageMultiplier, fireRateMultiplier, fuelUsageMultiplier, pilotHighScore, selectedPlane]);
 
   return (
     <div className={`relative w-full h-screen overflow-hidden ${isPaused ? '' : 'cursor-none'} bg-black font-sans`}>
@@ -927,7 +1273,7 @@ const ShootingGame = ({
       )}
       
       <div className="absolute top-28 left-80 flex gap-4 z-[90] flex-wrap">
-          <div className="glass-card p-3 flex items-center gap-2 text-primary border-primary/20"><ChevronRight size={14}/> Q: SNAP | E: LEASH</div>
+          <div className="glass-card p-3 flex items-center gap-2 text-primary border-primary/20"><ChevronRight size={14}/> Q: SNAP | E: LEASH | R: REALM SHIFT</div>
           {activeEffects.shield > 0 && <div className="glass-card p-3 flex items-center gap-2 text-primary animate-pulse"><Shield size={18}/> {Math.ceil(activeEffects.shield/1000)}s</div>}
           {activeEffects.multishot > 0 && <div className="glass-card p-3 flex items-center gap-2 text-purple-500 animate-pulse"><Layers size={18}/> {Math.ceil(activeEffects.multishot/1000)}s</div>}
           {activeEffects.rapidfire > 0 && <div className="glass-card p-3 flex items-center gap-2 text-[#ffaa00] animate-pulse"><RapidIcon size={18}/> {Math.ceil(activeEffects.rapidfire/1000)}s</div>}
@@ -938,9 +1284,25 @@ const ShootingGame = ({
           {activeEffects.speedboost > 0 && <div className="glass-card p-3 flex items-center gap-2 text-cyan-300 animate-pulse"><RapidIcon size={18}/> {Math.ceil(activeEffects.speedboost/1000)}s</div>}
       </div>
 
+      {activeDialogue && (
+          <div className="absolute bottom-28 left-1/2 -translate-x-1/2 w-[600px] z-[110] glass-card p-6 border-b-4 bg-black/90 backdrop-blur-lg flex gap-4 items-center shadow-[0_0_50px_rgba(255,0,0,0.15)]" style={{ borderColor: activeDialogue.color || '#ff0000' }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center border font-black uppercase text-xl font-mono shrink-0 shadow-inner animate-pulse" style={{ borderColor: activeDialogue.color || '#ff0000', color: activeDialogue.color || '#ff0000', backgroundColor: `${activeDialogue.color}15` || 'rgba(255,0,0,0.1)' }}>
+                  {activeDialogue.name.charAt(0)}
+              </div>
+              <div className="flex flex-col gap-1">
+                  <div className="text-xs font-black uppercase tracking-wider font-mono opacity-70" style={{ color: activeDialogue.color || '#ff0000' }}>
+                      {activeDialogue.name}
+                  </div>
+                  <div className="text-sm font-bold font-sans text-gray-200 tracking-wide leading-relaxed">
+                      "{activeDialogue.text}"
+                  </div>
+              </div>
+          </div>
+      )}
+
       {bossHealth !== null && gameState.current.boss && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 w-[700px] flex flex-col items-center gap-3 z-[80]">
-              <div className="flex items-center gap-4 text-red-500 font-black tracking-[1em] animate-pulse text-xl drop-shadow-lg"><Skull size={28} /> FLAGSHIP ENGAGED <Skull size={28} /></div>
+              <div className="flex items-center gap-4 text-red-500 font-black tracking-[1em] animate-pulse text-xl drop-shadow-lg"><Skull size={28} /> {gameState.current.boss.name || 'FLAGSHIP'} ENGAGED <Skull size={28} /></div>
               <div className="w-full h-6 bg-red-950/30 border-2 border-red-600/50 rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(255,0,0,0.4)] p-1 backdrop-blur-md">
                   <motion.div animate={{ width: `${bossHealth}%` }} className={`h-full rounded-xl ${bossHealth < 50 ? 'bg-gradient-to-r from-orange-600 to-red-600' : 'bg-gradient-to-r from-red-700 via-red-500 to-red-700'}`} />
               </div>
@@ -953,6 +1315,16 @@ const ShootingGame = ({
         {!gameState.current.boss && (
             <div className="w-96 h-2 bg-white/5 rounded-full overflow-hidden border border-white/10 mt-2 shadow-inner"><motion.div animate={{ width: `${Math.min(100, (score/targetScore)*100)}%` }} className="h-full bg-gradient-to-r from-primary to-accent" /></div>
         )}
+        <div className="flex gap-3 mt-2">
+            <div className={`px-4 py-1.5 rounded-full border backdrop-blur-md flex items-center gap-2 font-mono text-[9px] font-black uppercase tracking-widest transition-all duration-300 shadow-md ${
+                currentDimension === 'physical' 
+                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-cyan-500/10' 
+                    : 'bg-fuchsia-500/10 border-fuchsia-500/30 text-fuchsia-400 shadow-fuchsia-500/10 animate-pulse'
+            }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping" />
+                {currentDimension === 'physical' ? 'PHYSICAL PLANE' : 'ETHER VOID'} (R)
+            </div>
+        </div>
       </div>
 
       <div className="absolute top-10 right-10 flex flex-col gap-4">

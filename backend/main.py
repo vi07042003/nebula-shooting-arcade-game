@@ -60,6 +60,11 @@ class DebriefRequest(BaseModel):
     level: int
     succeeded: bool
 
+class BossRequest(BaseModel):
+    level: int
+    high_score: int
+    selected_ship: str
+
 # Migration logic: if scores.json exists, move data to DB and rename the file
 def migrate_json_to_db():
     DB_FILE = "scores.json"
@@ -232,6 +237,12 @@ async def ai_debrief(req: DebriefRequest):
     """Post-mission AURA analysis"""
     return aura.get_debrief(req.score, req.level, req.succeeded)
 
+@app.post("/ai/boss-generation")
+async def ai_boss_generation(req: BossRequest):
+    """Procedural boss design generation via AURA"""
+    return aura.generate_boss_config(req.level, req.high_score, req.selected_ship)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

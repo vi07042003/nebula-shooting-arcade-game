@@ -1070,6 +1070,7 @@ function App() {
               damageMultiplier={PLANES_CONFIG[selectedPlane].damage * (1 + upgrades.damage * 0.2)}
               fireRateMultiplier={PLANES_CONFIG[selectedPlane].firerate * (1 - upgrades.firerate * 0.08)}
               fuelUsageMultiplier={PLANES_CONFIG[selectedPlane].fuel * (1 - upgrades.fuel * 0.08)}
+              pilotHighScore={leaderboard.find(e => e.pilot_id === pilotId)?.score || 0}
             />
           </motion.div>
         )}
@@ -1222,12 +1223,12 @@ function App() {
                                 : 'border-white/5 bg-white/2 hover:bg-white/5'
                             }`}
                           >
-                            <div className={`w-16 h-16 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center p-2 relative overflow-hidden`}>
+                            <div className={`w-16 h-16 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center p-2 relative overflow-hidden shrink-0`}>
                               <div className={`absolute inset-2 rounded-full filter blur-md opacity-25 ${ship.colorClass === 'text-primary' ? 'bg-primary' : ship.colorClass === 'text-accent' ? 'bg-purple-600' : ship.colorClass === 'text-red-500' ? 'bg-red-600' : 'bg-yellow-500'}`} />
                               <img
                                 src={`${ship.imageSrc}?v=3`}
                                 alt={ship.name}
-                                className="w-12 h-12 object-contain relative z-10"
+                                className="w-10 h-10 object-contain relative z-10"
                                 style={{ transform: ship.rotation ? `rotate(${ship.rotation}rad)` : 'none' }}
                               />
                             </div>
@@ -1247,7 +1248,7 @@ function App() {
                         );
                       })}
                     </div>
-
+ 
                     {/* Ship Detail Preview */}
                     {(() => {
                       const previewShip = PLANES_CONFIG[previewShipId];
@@ -1259,8 +1260,8 @@ function App() {
                             <span className={`text-[10px] uppercase tracking-[0.3em] font-black ${previewShip.colorClass} mb-1`}>Class Starfighter</span>
                             <h3 className="text-2xl font-black uppercase italic tracking-tighter mb-2">{previewShip.name}</h3>
                             
-                            <div className="relative my-4 w-32 h-32 flex items-center justify-center">
-                              <div className={`absolute inset-4 rounded-full filter blur-xl opacity-30 ${previewShip.colorClass === 'text-primary' ? 'bg-primary' : previewShip.colorClass === 'text-accent' ? 'bg-purple-600' : previewShip.colorClass === 'text-red-500' ? 'bg-red-600' : 'bg-yellow-500'}`} />
+                            <div className="relative my-4 w-full h-36 flex items-center justify-center gap-6">
+                              <div className={`absolute inset-x-8 inset-y-2 rounded-full filter blur-2xl opacity-25 ${previewShip.colorClass === 'text-primary' ? 'bg-primary' : previewShip.colorClass === 'text-accent' ? 'bg-purple-600' : previewShip.colorClass === 'text-red-500' ? 'bg-red-600' : 'bg-yellow-500'}`} />
                               <motion.div 
                                 animate={{ y: [0, -8, 0] }}
                                 transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}

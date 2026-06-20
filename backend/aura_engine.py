@@ -226,6 +226,99 @@ class AuraEngine:
             )
         return {"rating": rating, "commentary": commentary, "suggestion": suggestion}
 
+    def generate_boss_config(self, level: int, high_score: int, selected_ship: str) -> dict:
+        """Call Gemini to procedurally design a custom boss fight tailored to player stats"""
+        system_prompt = (
+            "You are AURA, generating a procedural boss design in JSON format for the space shooter Nebula Strike. "
+            "You must output ONLY valid JSON. No markdown, no triple backticks, no comments. "
+            "The JSON structure must match exactly:\n"
+            "{\n"
+            '  "name": "TACTICAL_BOSS_NAME",\n'
+            '  "description": "Short futuristic scanner readout description.",\n'
+            '  "bulletPattern": "ring" | "spiral" | "laser_sweep",\n'
+            '  "color": "#HEX_COLOR_ACCENT",\n'
+            '  "dialogue": ["dialogue line 1", "dialogue line 2"],\n'
+            '  "imagePrompt": "pixel art spaceship sprite, transparent background, glowing accents, 2D arcade style"\n'
+            "}"
+        )
+        
+        prompt = (
+            f"Generate a customized Sector {level} boss. "
+            f"The pilot's current active ship is {selected_ship} and high score is {high_score}. "
+            "Design the boss weapons and dialogue to react to this ship type and high score."
+        )
+
+        reply = None
+        if self.gemini_client:
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt,
+                    config=self._genai_types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        temperature=0.85,
+                        response_mime_type="application/json"
+                    )
+                )
+                reply = response.text
+            except Exception as e:
+                print(f"Gemini boss generation failed: {e} — falling back to Pollinations.")
+
+        if not reply:
+            # Fallback to Pollinations with strict system instructions
+            try:
+                # We reuse the system prompt to guide Pollinations
+                resp = requests.post(
+                    POLLINATIONS_URL,
+                    json={
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "model": "openai",
+                        "seed": 42
+                    },
+                    timeout=20
+                )
+                if resp.status_code == 200:
+                    reply = resp.text.strip()
+                    # Clean up markdown code block formatting if present
+                    if reply.startswith("```"):
+                        lines = reply.split("\n")
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        reply = "\n".join(lines).strip()
+            except Exception as e:
+                print(f"Pollinations boss generation failed: {e}")
+
+        # Parse and return JSON
+        if reply:
+            try:
+                data = json.loads(reply)
+                # Verify keys
+                if all(k in data for k in ("name", "description", "bulletPattern", "color", "dialogue", "imagePrompt")):
+                    return data
+            except Exception as e:
+                print(f"Failed to parse generated boss JSON: {e}. Output was: {reply}")
+
+        # Static fallback if everything else fails
+        fallback_patterns = ["ring", "spiral", "laser_sweep"]
+        pattern = fallback_patterns[level % 3]
+        return {
+            "name": f"Nexus Overlord V{level}",
+            "description": f"Standard dreadnought fitted with a high-energy {pattern} core.",
+            "bulletPattern": pattern,
+            "color": "#ff0055" if level % 2 == 0 else "#a800ff",
+            "dialogue": [
+                f"Sectors {level} belongs to the Nexus Hegemony, Pilot.",
+                f"Your {selected_ship} is no match for our structural integration."
+            ],
+            "imagePrompt": "menacing alien dreadnought flagship, red glowing engines, pixel art"
+        }
+
 
 # Singleton
 aura = AuraEngine()
+
