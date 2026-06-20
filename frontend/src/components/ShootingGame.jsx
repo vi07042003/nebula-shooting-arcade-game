@@ -2,7 +2,27 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, RefreshCcw, Home, Settings, Pause, ChevronRight, Zap, Skull, ShieldAlert, X, Shield, Timer, Zap as RapidIcon, Layers } from 'lucide-react';
 
-const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, enabledPowerUps, isDemoMode = false, playMode = 'manual', gestureSettings }) => {
+const ShootingGame = ({ 
+  level, 
+  onGameOver, 
+  onQuit, 
+  onOpenSettings, 
+  controls, 
+  enabledPowerUps, 
+  isDemoMode = false, 
+  playMode = 'manual', 
+  gestureSettings,
+  selectedPlane = 'interceptor',
+  planeImageSrc = '/player.png',
+  planeRotation = 0,
+  planeWidth = 90,
+  planeHeight = 90,
+  speedMultiplier = 1.0,
+  maxHealth = 100,
+  damageMultiplier = 1.0,
+  fireRateMultiplier = 1.0,
+  fuelUsageMultiplier = 1.0
+}) => {
   const gs = gestureSettings || {
     detectionConfidence: 0.5,
     trackingConfidence: 0.5,
@@ -12,7 +32,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
   };
   const canvasRef = useRef(null);
   const [score, setScore] = useState(0);
-  const [health, setHealth] = useState(100);
+  const [health, setHealth] = useState(maxHealth);
   const [fuel, setFuel] = useState(100);
   const [bossHealth, setBossHealth] = useState(null);
   const [activeEffects, setActiveEffects] = useState({ shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 });
@@ -168,7 +188,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
   const isBossLevel = level % 5 === 0;
   
   const gameState = useRef({
-    player: { x: 0, y: 0, targetX: 0, targetY: 0, w: 90, h: 90, friction: 0.18, recoil: 0 },
+    player: { x: 0, y: 0, targetX: 0, targetY: 0, w: planeWidth, h: planeHeight, friction: 0.18, recoil: 0 },
     projectiles: [],
     enemyProjectiles: [],
     powerups: [],
@@ -212,7 +232,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         effects: { shield: 0, multishot: 0, rapidfire: 0, slowmo: 0, laser: 0, sidecannons: 0, drone: 0, speedboost: 0 }
     };
     setScore(0);
-    setHealth(100);
+    setHealth(maxHealth);
     setFuel(100);
     setBossHealth(null);
     setIsPaused(false);
@@ -248,14 +268,26 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
     tctx.drawImage(img, 0, 0);
     const imageData = tctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
     const data = imageData.data;
+    
+    const isAlreadyTransparent = data[3] === 0;
     const bgR = data[0], bgG = data[1], bgB = data[2];
+    
     for (let i = 0; i < data.length; i += 4) {
+      if (data[i+3] === 0) continue;
+      
       const r = data[i], g = data[i+1], b = data[i+2];
-      const diff = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
-      if (diff < tolerance) { data[i+3] = 0; } else {
+      
+      if (isAlreadyTransparent) {
         data[i] = Math.min(255, r * brighten + 40);
         data[i+1] = Math.min(255, g * brighten);
         data[i+2] = Math.min(255, b * brighten);
+      } else {
+        const diff = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+        if (diff < tolerance) { data[i+3] = 0; } else {
+          data[i] = Math.min(255, r * brighten + 40);
+          data[i+1] = Math.min(255, g * brighten);
+          data[i+2] = Math.min(255, b * brighten);
+        }
       }
     }
     tctx.putImageData(imageData, 0, 0);
@@ -263,7 +295,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
   };
 
   useEffect(() => {
-    images.current.player.src = '/player.png';
+    images.current.player.src = planeImageSrc ? `${planeImageSrc}?v=3` : '/player.png?v=3';
     images.current.enemy.src = '/enemy.png';
     images.current.enemyTank.src = '/enemy_tank.png';
     images.current.enemySpeeder.src = '/enemy_speeder.png';
@@ -422,7 +454,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         player.recoil *= 0.85;
       } else {
         // Keyboard Manual Control
-        const moveSpeed = (15 + (level * 0.1)) * (effects.speedboost > 0 ? 1.6 : 1);
+        const moveSpeed = (15 + (level * 0.1)) * (effects.speedboost > 0 ? 1.6 : 1) * speedMultiplier;
         if (keys[controls.left]) player.targetX -= moveSpeed;
         if (keys[controls.right]) player.targetX += moveSpeed;
         if (keys[controls.up]) player.targetY -= moveSpeed;
@@ -441,7 +473,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         isMoving = keys[controls.left] || keys[controls.right] || keys[controls.up] || keys[controls.down];
       }
       if (!isDemoMode) {
-        gameState.current.fuel -= isMoving ? 0.06 : 0.02;
+        gameState.current.fuel -= (isMoving ? 0.06 : 0.02) * fuelUsageMultiplier;
       }
       
       if (gameState.current.fuel <= 0) {
@@ -521,7 +553,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
           const dist = Math.sqrt((powerups[i].x-player.x)**2 + (powerups[i].y-player.y)**2);
           if (dist < 60) {
               const p = powerups[i];
-              if (p.id === 'shield' || p.id === 'extralife') setHealth(100);
+              if (p.id === 'shield' || p.id === 'extralife') setHealth(maxHealth);
               else if (p.id === 'fuel') {
                   gameState.current.fuel = Math.min(100, gameState.current.fuel + 40);
                   setFuel(Math.ceil(gameState.current.fuel));
@@ -554,7 +586,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
       }
 
       // FIRING LOGIC
-      const cooldown = effects.rapidfire > 0 ? 50 : 100;
+      const cooldown = (effects.rapidfire > 0 ? 50 : 100) * fireRateMultiplier;
       if ((keys[controls.fire] || keys['Space']) && timestamp - gameState.current.lastFire > cooldown) {
         if (effects.laser > 0) {
             projectiles.push({ x: player.x, y: player.y - 120, vy: -50, vx: 0, size: 15, color: '#ff0033' });
@@ -620,8 +652,8 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         }
         for (let j = projectiles.length - 1; j >= 0; j--) {
             if (Math.sqrt((boss.x-projectiles[j].x)**2 + (boss.y-projectiles[j].y)**2) < boss.w / 2.1) {
-                boss.currentHp--; boss.flash = 1.0; projectiles.splice(j, 1);
-                setBossHealth((boss.currentHp / boss.hp) * 100);
+                boss.currentHp -= damageMultiplier; boss.flash = 1.0; projectiles.splice(j, 1);
+                setBossHealth(Math.max(0, (boss.currentHp / boss.hp) * 100));
                 if (boss.currentHp <= 0) {
                     gameState.current.score += 10000; setScore(gameState.current.score);
                     for(let k=0; k<150; k++) particles.push({ x: boss.x, y: boss.y, vx: (Math.random()-0.5)*40, vy: (Math.random()-0.5)*40, life: 2.5, color: '#ffaa00', size: 10 });
@@ -639,7 +671,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         }
         for (let j = projectiles.length - 1; j >= 0; j--) {
           if (Math.sqrt((enemies[i].x-projectiles[j].x)**2 + (enemies[i].y-projectiles[j].y)**2) < enemies[i].w/1.7) {
-            enemies[i].currentHp--; projectiles.splice(j, 1);
+            enemies[i].currentHp -= damageMultiplier; projectiles.splice(j, 1);
             if (enemies[i].currentHp <= 0) {
               dropPowerup(enemies[i].x, enemies[i].y);
               const pts = { STANDARD: 100, SPEEDER: 250, TANK: 450, HEAVY: 800 }[enemies[i].type];
@@ -704,6 +736,9 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
 
         ctx.save();
         ctx.translate(gameState.current.player.x, gameState.current.player.y);
+        if (planeRotation) {
+            ctx.rotate(planeRotation);
+        }
         
         const effects = gameState.current.effects;
         
@@ -739,6 +774,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
             ctx.translate(echo.x - gameState.current.player.x, echo.y - gameState.current.player.y);
             ctx.globalAlpha = 0.3;
             ctx.filter = 'drop-shadow(0 0 10px #00f2ff) hue-rotate(180deg)';
+            if (planeRotation) ctx.rotate(planeRotation);
             ctx.drawImage(processedImages.current.player, -gameState.current.player.w/2, -gameState.current.player.h/2, gameState.current.player.w, gameState.current.player.h);
             ctx.restore();
         }
@@ -807,6 +843,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
         if (processedImages.current.player) {
           ctx.globalAlpha = 0.4;
           ctx.filter = 'drop-shadow(0 0 8px #ff00ff) saturate(2)';
+          if (planeRotation) ctx.rotate(planeRotation);
           ctx.drawImage(processedImages.current.player, -gameState.current.player.w/2, -gameState.current.player.h/2, gameState.current.player.w, gameState.current.player.h);
         }
         
@@ -825,7 +862,7 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
 
     requestRef.current = requestAnimationFrame(update);
     return () => { cancelAnimationFrame(requestRef.current); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
-  }, [isPaused, level, onGameOver, controls]);
+  }, [isPaused, level, onGameOver, controls, planeImageSrc, planeWidth, planeHeight, maxHealth, speedMultiplier, damageMultiplier, fireRateMultiplier, fuelUsageMultiplier]);
 
   return (
     <div className={`relative w-full h-screen overflow-hidden ${isPaused ? '' : 'cursor-none'} bg-black font-sans`}>
@@ -920,8 +957,8 @@ const ShootingGame = ({ level, onGameOver, onQuit, onOpenSettings, controls, ena
 
       <div className="absolute top-10 right-10 flex flex-col gap-4">
         <div className="glass-card p-6 border-r-8 border-r-secondary flex items-center gap-10 shadow-2xl">
-            <div className="flex flex-col items-end"><span className="text-xs text-gray-400 uppercase font-black tracking-[0.2em] mb-1">Hull Plating</span><span className="text-4xl font-black text-secondary italic underline decoration-secondary/30">{health}%</span></div>
-            <div className="w-56 h-4 bg-black/60 rounded-full overflow-hidden border border-white/10 p-0.5"><motion.div animate={{ width: `${health}%` }} className="h-full rounded-full bg-gradient-to-r from-[#7000ff] to-accent shadow-[0_0_20px_rgba(112,0,255,1)]" /></div>
+            <div className="flex flex-col items-end"><span className="text-xs text-gray-400 uppercase font-black tracking-[0.2em] mb-1">Hull Plating</span><span className="text-4xl font-black text-secondary italic underline decoration-secondary/30">{Math.ceil(Math.min(100, (health / maxHealth) * 100))}%</span></div>
+            <div className="w-56 h-4 bg-black/60 rounded-full overflow-hidden border border-white/10 p-0.5"><motion.div animate={{ width: `${Math.min(100, (health / maxHealth) * 100)}%` }} className="h-full rounded-full bg-gradient-to-r from-[#7000ff] to-accent shadow-[0_0_20px_rgba(112,0,255,1)]" /></div>
         </div>
         <div className="glass-card p-4 border-r-8 border-r-amber-400 flex items-center gap-6 shadow-2xl">
             <div className="flex flex-col items-end"><span className="text-[10px] text-gray-400 uppercase font-black tracking-[0.2em]">Fuel Cells</span><span className="text-2xl font-black text-amber-400 italic">{fuel}%</span></div>

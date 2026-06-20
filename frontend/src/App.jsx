@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ShootingGame from './components/ShootingGame';
 import ShootingStars from './components/ShootingStars';
 import axios from 'axios';
-import { Trophy, Play, Home, RefreshCcw, Settings, X, LogOut, ChevronRight, Keyboard, Layers, Lock, Unlock, Skull, Link, Zap, Shield, Timer, Sliders, Check, Edit2, Loader2, MessageSquare, Send, RotateCcw, Cpu, Activity, Radio, BarChart2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trophy, Play, Home, RefreshCcw, Settings, X, LogOut, ChevronRight, Keyboard, Layers, Lock, Unlock, Skull, Link, Zap, Shield, Timer, Sliders, Check, Edit2, Loader2, MessageSquare, Send, RotateCcw, Cpu, Activity, Radio, BarChart2, ChevronDown, ChevronUp, ShoppingBag, Coins } from 'lucide-react';
 
 
 const API_URL = 'http://localhost:8000';
@@ -432,6 +432,111 @@ const ModalWrapper = ({ isOpen, onClose, title, children, accentColor = "primary
   );
 };
 
+const PLANES_CONFIG = {
+  interceptor: {
+    id: 'interceptor',
+    name: 'Interceptor Alpha',
+    cost: 0,
+    imageSrc: '/player.png',
+    rotation: 0,
+    width: 90,
+    height: 90,
+    speed: 1.0,
+    health: 1.0,
+    damage: 1.0,
+    firerate: 1.0,
+    fuel: 1.0,
+    desc: 'Standard issue galactic fighter. Balanced, reliable, and versatile.',
+    colorClass: 'text-primary',
+    bgGlow: 'shadow-[0_0_30px_rgba(0,242,255,0.2)]'
+  },
+  phantom: {
+    id: 'phantom',
+    name: 'Phantom Shadow',
+    cost: 2500,
+    imageSrc: '/player_phantom.png',
+    rotation: Math.PI / 2, // Rotate 90deg clockwise to point up
+    width: 80,
+    height: 80,
+    speed: 1.4,
+    health: 0.8,
+    damage: 1.1,
+    firerate: 1.25,
+    fuel: 0.9,
+    desc: 'Sleek scout ship utilizing gravitational slipstream tech. Exceptional speed and firing rates, but delicate hull plating.',
+    colorClass: 'text-accent',
+    bgGlow: 'shadow-[0_0_30px_rgba(112,0,255,0.2)]'
+  },
+  phoenix: {
+    id: 'phoenix',
+    name: 'Phoenix Devastator',
+    cost: 6000,
+    imageSrc: '/player_phoenix.png',
+    rotation: 0,
+    width: 105,
+    height: 105,
+    speed: 0.8,
+    health: 1.5,
+    damage: 1.4,
+    firerate: 0.8,
+    fuel: 1.25,
+    desc: 'Heavy dreadnought powered by a plasma core. Slow speed, but boasts heavily reinforced hull armor and devastating weapon output.',
+    colorClass: 'text-red-500',
+    bgGlow: 'shadow-[0_0_30px_rgba(239,68,68,0.2)]'
+  },
+  monarch: {
+    id: 'monarch',
+    name: 'Void Monarch',
+    cost: 12000,
+    imageSrc: '/player_monarch.png',
+    rotation: 0,
+    width: 95,
+    height: 95,
+    speed: 1.2,
+    health: 1.2,
+    damage: 1.3,
+    firerate: 1.15,
+    fuel: 0.95,
+    desc: 'Elite vanguard craft utilizing dark matter energy. Outstanding tactical capabilities across all systems.',
+    colorClass: 'text-yellow-400',
+    bgGlow: 'shadow-[0_0_30px_rgba(234,179,8,0.2)]'
+  }
+};
+
+const UPGRADE_COSTS = [500, 1000, 2000, 4000, 8000];
+const UPGRADES_CONFIG = [
+  {
+    key: 'health',
+    name: 'Hull Plating Armor',
+    desc: 'Increases structural integrity. Allows the ship to survive more direct hits.',
+    icon: <Shield className="text-purple-400" size={24} />
+  },
+  {
+    key: 'speed',
+    name: 'Gravitational Thrusters',
+    desc: 'Enhances sub-light engine velocity and maneuverability.',
+    icon: <Zap className="text-cyan-400" size={24} />
+  },
+  {
+    key: 'damage',
+    name: 'Plasma Overclocking',
+    desc: 'Increases primary weapon projectile energy damage.',
+    icon: <Skull className="text-red-400" size={24} />
+  },
+  {
+    key: 'firerate',
+    name: 'Weapon Cooling Coils',
+    desc: 'Increases the cyclic rate of fire by cooling firing chambers faster.',
+    icon: <Timer className="text-yellow-400" size={24} />
+  },
+  {
+    key: 'fuel',
+    name: 'Fuel Cell Efficiencies',
+    desc: 'Reduces the rate of fuel consumption during maneuvers.',
+    icon: <Layers className="text-[#aaff00]" size={24} />
+  }
+];
+
 function App() {
   const [gameState, setGameState] = useState('LANDING'); 
   const [currentLevel, setCurrentLevel] = useState(1);
@@ -440,6 +545,23 @@ function App() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [username, setUsername] = useState(localStorage.getItem('nebula_pilot') || 'Pilot_' + Math.floor(Math.random() * 1000));
   const [pilotId, setPilotId] = useState(localStorage.getItem('nebula_pilot_id') || 'id_' + Math.random().toString(36).substr(2, 9) + Date.now());
+  
+  // Coin and Hangar state
+  const [coins, setCoins] = useState(() => parseInt(localStorage.getItem('nebula_coins')) || 0);
+  const [purchasedPlanes, setPurchasedPlanes] = useState(() => {
+    const saved = localStorage.getItem('nebula_purchased_planes');
+    return saved ? JSON.parse(saved) : ['interceptor'];
+  });
+  const [selectedPlane, setSelectedPlane] = useState(() => localStorage.getItem('nebula_selected_plane') || 'interceptor');
+  const [upgrades, setUpgrades] = useState(() => {
+    const saved = localStorage.getItem('nebula_upgrades');
+    return saved ? JSON.parse(saved) : { health: 0, speed: 0, damage: 0, firerate: 0, fuel: 0 };
+  });
+  const [earnedCoins, setEarnedCoins] = useState(0);
+  const [coinBreakdown, setCoinBreakdown] = useState({ base: 0, boss: 0, performance: 0, total: 0 });
+  const [shopTab, setShopTab] = useState('ships');
+  const [previewShipId, setPreviewShipId] = useState(() => localStorage.getItem('nebula_selected_plane') || 'interceptor');
+
   const [showSettings, setShowSettings] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [currentDemoSlide, setCurrentDemoSlide] = useState(0);
@@ -480,6 +602,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem('nebula_gesture_settings', JSON.stringify(gestureSettings));
   }, [gestureSettings]);
+
+  useEffect(() => {
+    localStorage.setItem('nebula_coins', coins.toString());
+  }, [coins]);
+
+  useEffect(() => {
+    localStorage.setItem('nebula_purchased_planes', JSON.stringify(purchasedPlanes));
+  }, [purchasedPlanes]);
+
+  useEffect(() => {
+    localStorage.setItem('nebula_selected_plane', selectedPlane);
+  }, [selectedPlane]);
+
+  useEffect(() => {
+    localStorage.setItem('nebula_upgrades', JSON.stringify(upgrades));
+  }, [upgrades]);
 
   useEffect(() => {
     localStorage.setItem('nebula_pilot', username);
@@ -539,11 +677,40 @@ function App() {
       setGameState('LANDING');
       return;
     }
+    
+    let baseReward = 0;
+    let bossReward = 0;
+    let perfReward = 0;
+    let totalReward = 0;
+
+    if (won) {
+      baseReward = currentLevel * 150;
+      if (currentLevel % 5 === 0) {
+        bossReward = currentLevel * 250;
+      }
+      perfReward = Math.floor(score / 50);
+      totalReward = baseReward + bossReward + perfReward;
+    } else {
+      perfReward = Math.floor(score / 150);
+      totalReward = perfReward;
+    }
+
+    setEarnedCoins(totalReward);
+    setCoinBreakdown({
+      base: baseReward,
+      boss: bossReward,
+      performance: perfReward,
+      total: totalReward
+    });
+
+    setCoins(prev => prev + totalReward);
     setFinalScore(score);
+
     if (won) {
       if (currentLevel === unlockedLevels && unlockedLevels < 20) setUnlockedLevels(prev => prev + 1);
       setGameState('LEVEL_COMPLETE');
     } else setGameState('GAMEOVER');
+
     try {
       await axios.post(`${API_URL}/score`, { pilot_id: pilotId, username, score });
       fetchLeaderboard();
@@ -668,7 +835,18 @@ function App() {
               </AnimatePresence>
             </div>
 
-            <div className="absolute top-8 right-8 flex gap-3">
+            <div className="absolute top-8 right-8 flex gap-3 items-center">
+              {/* Coins display */}
+              <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-[1.5rem] px-5 py-2.5 text-yellow-400 font-mono font-black text-lg shadow-[0_0_15px_rgba(234,179,8,0.1)]">
+                <Coins size={18} className="text-yellow-400 animate-pulse" />
+                <span>{coins.toLocaleString()}</span>
+              </div>
+              
+              <button title="Space Hangar & Shop" onClick={() => setGameState('SHOP')} className="px-5 py-3 glass-card hover:bg-white/10 transition-all border-yellow-500/20 text-yellow-400 flex items-center gap-2.5 shadow-[0_0_15px_rgba(234,179,8,0.08)] hover:scale-105 active:scale-95">
+                <ShoppingBag size={18} />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em]">Shop</span>
+              </button>
+
               <button title="Training Simulation" onClick={() => { setShowDemo(true); setCurrentDemoSlide(0); }} className="px-5 py-3 glass-card hover:bg-white/10 transition-all border-primary/20 text-primary flex items-center gap-2.5 shadow-[0_0_15px_rgba(0,242,255,0.08)]">
                 <Play size={18} />
                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">Demo</span>
@@ -881,6 +1059,17 @@ function App() {
               isDemoMode={isDemoMode}
               playMode={playMode}
               gestureSettings={gestureSettings}
+              
+              selectedPlane={selectedPlane}
+              planeImageSrc={PLANES_CONFIG[selectedPlane].imageSrc}
+              planeRotation={PLANES_CONFIG[selectedPlane].rotation}
+              planeWidth={PLANES_CONFIG[selectedPlane].width}
+              planeHeight={PLANES_CONFIG[selectedPlane].height}
+              speedMultiplier={PLANES_CONFIG[selectedPlane].speed * (1 + upgrades.speed * 0.1)}
+              maxHealth={Math.round(PLANES_CONFIG[selectedPlane].health * (100 + upgrades.health * 15))}
+              damageMultiplier={PLANES_CONFIG[selectedPlane].damage * (1 + upgrades.damage * 0.2)}
+              fireRateMultiplier={PLANES_CONFIG[selectedPlane].firerate * (1 - upgrades.firerate * 0.08)}
+              fuelUsageMultiplier={PLANES_CONFIG[selectedPlane].fuel * (1 - upgrades.fuel * 0.08)}
             />
           </motion.div>
         )}
@@ -888,10 +1077,28 @@ function App() {
         {gameState === 'GAMEOVER' && (
           <motion.div key="gameover" initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center min-h-screen relative z-10 p-6 bg-red-950/20">
             <div className="glass-card p-16 max-w-xl w-full border-t-[12px] border-t-red-600 shadow-[0_0_100px_rgba(220,38,38,0.2)]">
-              <div className="flex flex-col items-center gap-6 mb-12 text-center">
+              <div className="flex flex-col items-center gap-6 mb-8 text-center">
                   <div className="w-24 h-24 rounded-full bg-red-600/10 border-4 border-red-600 flex items-center justify-center animate-bounce mx-auto"><X size={64} className="text-red-600" /></div>
                   <h2 className="text-7xl font-black text-red-600 mb-2 italic tracking-tighter uppercase leading-none mt-4">Simulation <br/> Failure</h2>
               </div>
+              
+              <div className="bg-white/5 border border-white/10 rounded-[2rem] p-6 mb-8 flex flex-col gap-3 font-mono text-left">
+                <h3 className="text-lg font-black text-red-500 uppercase tracking-widest border-b border-white/15 pb-2 mb-2 flex items-center gap-2">
+                  <Coins className="text-yellow-400 animate-pulse" size={20} /> CONSOLATION CREDITS
+                </h3>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Combat Performance:</span>
+                  <span className="text-white font-bold">+{coinBreakdown.performance} Credits</span>
+                </div>
+                <div className="border-t border-white/10 pt-3 mt-1 flex justify-between text-xl font-black text-yellow-400">
+                  <span>TOTAL EARNED:</span>
+                  <span className="flex items-center gap-1.5">
+                    <Coins size={22} />
+                    +{coinBreakdown.total}
+                  </span>
+                </div>
+              </div>
+
               <div className="space-y-4">
                 <button onClick={() => setGameState('PLAYING')} className="btn-primary w-full flex items-center justify-center gap-4 py-6 rounded-3xl text-2xl font-black shadow-xl"><RefreshCcw size={28} /> RE-ENGAGE</button>
                 <button onClick={() => setGameState('STAGES')} className="w-full glass-card py-5 flex items-center justify-center gap-3 hover:bg-white/10 uppercase font-black text-xs tracking-[0.4em] transition-all border-white/5"><Layers size={20} /> MISSION MAP</button>
@@ -903,13 +1110,324 @@ function App() {
         {gameState === 'LEVEL_COMPLETE' && (
           <motion.div key="win" initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center min-h-screen relative z-10 p-6 bg-green-950/20">
             <div className="glass-card p-16 max-w-xl w-full border-t-[12px] border-t-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)] text-left">
-              <div className="flex flex-col items-center gap-6 mb-12 text-center">
+              <div className="flex flex-col items-center gap-6 mb-8 text-center">
                   <div className="w-24 h-24 rounded-full bg-green-500/10 border-4 border-green-500 flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.4)] mx-auto"><Unlock size={64} className="text-green-500" /></div>
                   <h2 className="text-7xl font-black text-green-500 mb-2 italic tracking-tighter uppercase leading-none mt-4">Sector <br/> SECURED</h2>
               </div>
+              
+              <div className="bg-white/5 border border-white/10 rounded-[2rem] p-6 mb-8 flex flex-col gap-3 font-mono">
+                <h3 className="text-lg font-black text-primary uppercase tracking-widest border-b border-white/15 pb-2 mb-2 flex items-center gap-2">
+                  <Coins className="text-yellow-400 animate-pulse" size={20} /> MISSION REWARDS
+                </h3>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Sector Completion:</span>
+                  <span className="text-white font-bold">+{coinBreakdown.base} Credits</span>
+                </div>
+                {coinBreakdown.boss > 0 && (
+                  <div className="flex justify-between text-sm text-red-400">
+                    <span>Flagship Defeated Bonus:</span>
+                    <span className="font-bold">+{coinBreakdown.boss} Credits</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400">Combat Performance:</span>
+                  <span className="text-white font-bold">+{coinBreakdown.performance} Credits</span>
+                </div>
+                <div className="border-t border-white/10 pt-3 mt-1 flex justify-between text-xl font-black text-yellow-400">
+                  <span>TOTAL EARNED:</span>
+                  <span className="flex items-center gap-1.5">
+                    <Coins size={22} className="animate-bounce" />
+                    +{coinBreakdown.total}
+                  </span>
+                </div>
+              </div>
+
               <div className="space-y-6">
                 <button onClick={() => (currentLevel < 20 ? startLevel(currentLevel+1) : setGameState('STAGES'))} className="btn-primary w-full flex items-center justify-center gap-4 py-8 rounded-[2.5rem] text-3xl font-black shadow-2xl hover:scale-105 transition-all"><ChevronRight size={36} /> NEXT QUADRANT</button>
                 <button onClick={() => setGameState('STAGES')} className="w-full glass-card py-5 flex items-center justify-center gap-3 hover:bg-white/10 uppercase font-black text-xs tracking-[0.4em] border-white/5 transition-all"><Layers size={20} /> RETURN TO HQ</button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {gameState === 'SHOP' && (
+          <motion.div 
+            key="shop" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setGameState('LANDING'); }}
+            className="flex flex-col items-center justify-center min-h-screen p-4 md:p-8 relative z-10 bg-black/60 backdrop-blur-sm overflow-hidden cursor-pointer"
+          >
+            <div 
+              className="glass-card p-6 md:p-8 max-w-5xl w-full max-h-[85vh] flex flex-col border-t-4 border-t-yellow-500 text-left overflow-hidden shadow-2xl cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4 flex-shrink-0">
+                <div>
+                  <h2 className="text-4xl font-black italic uppercase tracking-tighter leading-none">Galactic <span className="text-yellow-400">Hangar & Shop</span></h2>
+                  <p className="text-gray-500 uppercase tracking-[0.4em] text-[9px] font-black mt-2">Upgrade ship sub-systems and acquire advanced starfighters</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-[1.5rem] px-5 py-2.5 text-yellow-400 font-mono font-black text-lg shadow-[0_0_20px_rgba(234,179,8,0.15)]">
+                    <Coins size={20} className="text-yellow-400 animate-pulse" />
+                    <span>{coins.toLocaleString()}</span>
+                  </div>
+                  <button onClick={() => setGameState('LANDING')} className="bg-white/5 p-4 rounded-2xl hover:bg-white/10 transition-all border border-white/5"><Home size={22} /></button>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-[1.5rem] w-fit mb-6 flex-shrink-0">
+                <button 
+                  onClick={() => setShopTab('ships')}
+                  className={`px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
+                    shopTab === 'ships' 
+                      ? 'bg-yellow-400 text-black shadow-[0_0_20px_rgba(234,179,8,0.3)] font-bold' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Starfighters
+                </button>
+                <button 
+                  onClick={() => setShopTab('upgrades')}
+                  className={`px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
+                    shopTab === 'upgrades' 
+                      ? 'bg-yellow-400 text-black shadow-[0_0_20px_rgba(234,179,8,0.3)] font-bold' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  System Upgrades
+                </button>
+              </div>
+
+              {/* Scrollable Content Container */}
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0 mb-6">
+                {shopTab === 'ships' ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                    {/* Ship Grid */}
+                    <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {Object.values(PLANES_CONFIG).map(ship => {
+                        const isOwned = purchasedPlanes.includes(ship.id);
+                        const isEquipped = selectedPlane === ship.id;
+                        const isCurrentPreview = previewShipId === ship.id;
+                        return (
+                          <button
+                            key={ship.id}
+                            onClick={() => setPreviewShipId(ship.id)}
+                            className={`flex items-center gap-4 p-5 rounded-3xl border-2 transition-all text-left ${
+                              isCurrentPreview
+                                ? 'border-yellow-400 bg-yellow-400/5 shadow-[0_0_15px_rgba(234,179,8,0.15)]'
+                                : 'border-white/5 bg-white/2 hover:bg-white/5'
+                            }`}
+                          >
+                            <div className={`w-16 h-16 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center p-2 relative overflow-hidden`}>
+                              <div className={`absolute inset-2 rounded-full filter blur-md opacity-25 ${ship.colorClass === 'text-primary' ? 'bg-primary' : ship.colorClass === 'text-accent' ? 'bg-purple-600' : ship.colorClass === 'text-red-500' ? 'bg-red-600' : 'bg-yellow-500'}`} />
+                              <img
+                                src={`${ship.imageSrc}?v=3`}
+                                alt={ship.name}
+                                className="w-12 h-12 object-contain relative z-10"
+                                style={{ transform: ship.rotation ? `rotate(${ship.rotation}rad)` : 'none' }}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <div className="font-black uppercase tracking-tight text-md">{ship.name}</div>
+                              <div className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mt-1">
+                                {isEquipped ? (
+                                  <span className="text-green-400 flex items-center gap-1"><Check size={12}/> Equipped</span>
+                                ) : isOwned ? (
+                                  <span className="text-gray-400">Owned</span>
+                                ) : (
+                                  <span className="text-yellow-400 font-mono">{ship.cost.toLocaleString()} Credits</span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Ship Detail Preview */}
+                    {(() => {
+                      const previewShip = PLANES_CONFIG[previewShipId];
+                      const isOwned = purchasedPlanes.includes(previewShipId);
+                      const isEquipped = selectedPlane === previewShipId;
+                      return (
+                        <div className="bg-white/5 border border-white/5 rounded-[2rem] p-6 flex flex-col justify-between items-center text-center">
+                          <div className="w-full flex flex-col items-center">
+                            <span className={`text-[10px] uppercase tracking-[0.3em] font-black ${previewShip.colorClass} mb-1`}>Class Starfighter</span>
+                            <h3 className="text-2xl font-black uppercase italic tracking-tighter mb-2">{previewShip.name}</h3>
+                            
+                            <div className="relative my-4 w-32 h-32 flex items-center justify-center">
+                              <div className={`absolute inset-4 rounded-full filter blur-xl opacity-30 ${previewShip.colorClass === 'text-primary' ? 'bg-primary' : previewShip.colorClass === 'text-accent' ? 'bg-purple-600' : previewShip.colorClass === 'text-red-500' ? 'bg-red-600' : 'bg-yellow-500'}`} />
+                              <motion.div 
+                                animate={{ y: [0, -8, 0] }}
+                                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                                className="relative z-10"
+                              >
+                                <img 
+                                  src={`${previewShip.imageSrc}?v=3`}
+                                  alt={previewShip.name} 
+                                  className="w-20 h-20 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.15)]"
+                                  style={{ transform: previewShip.rotation ? `rotate(${previewShip.rotation}rad)` : 'none' }}
+                                />
+                              </motion.div>
+                            </div>
+
+                            <p className="text-gray-400 text-[10px] leading-relaxed max-w-sm mb-4 uppercase text-center font-medium">{previewShip.desc}</p>
+                            
+                            {/* Stat bars */}
+                            <div className="w-full space-y-3 mb-6">
+                              <div>
+                                <div className="flex justify-between text-[9px] font-mono mb-1 text-gray-400">
+                                  <span>Engine Velocity</span>
+                                  <span className="font-bold text-white">{(previewShip.speed * 100).toFixed(0)}%</span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                  <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(previewShip.speed / 2.0) * 100}%` }} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between text-[9px] font-mono mb-1 text-gray-400">
+                                  <span>Hull Armor</span>
+                                  <span className="font-bold text-white">{(previewShip.health * 100).toFixed(0)}%</span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                  <div className="h-full bg-purple-500 rounded-full" style={{ width: `${(previewShip.health / 2.0) * 100}%` }} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between text-[9px] font-mono mb-1 text-gray-400">
+                                  <span>Plasma Firepower</span>
+                                  <span className="font-bold text-white">{(previewShip.damage * 100).toFixed(0)}%</span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                  <div className="h-full bg-red-500 rounded-full" style={{ width: `${(previewShip.damage / 2.0) * 100}%` }} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex justify-between text-[9px] font-mono mb-1 text-gray-400">
+                                  <span>Firing Cooldown</span>
+                                  <span className="font-bold text-white">{(previewShip.firerate * 100).toFixed(0)}%</span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                  <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${(previewShip.firerate / 2.0) * 100}%` }} />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="w-full">
+                            {isOwned ? (
+                              isEquipped ? (
+                                <button disabled className="w-full py-3 rounded-xl border border-green-500/20 bg-green-500/10 text-green-400 font-black text-[10px] tracking-widest uppercase flex items-center justify-center gap-2">
+                                  <Check size={14} /> ACTIVE STARFIGHTER
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => setSelectedPlane(previewShipId)} 
+                                  className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white font-black text-[10px] tracking-widest uppercase border border-white/10 transition-colors"
+                                >
+                                  EQUIP STARFIGHTER
+                                </button>
+                              )
+                            ) : (
+                              <button 
+                                onClick={() => {
+                                  if (coins >= previewShip.cost) {
+                                    setCoins(prev => prev - previewShip.cost);
+                                    setPurchasedPlanes(prev => [...prev, previewShipId]);
+                                    setSelectedPlane(previewShipId);
+                                  }
+                                }}
+                                disabled={coins < previewShip.cost}
+                                className={`w-full py-3 rounded-xl font-black text-[10px] tracking-widest uppercase transition-colors flex items-center justify-center gap-2 ${
+                                  coins >= previewShip.cost 
+                                    ? 'bg-yellow-400 hover:bg-yellow-500 text-black shadow-[0_0_20px_rgba(234,179,8,0.25)]' 
+                                    : 'bg-white/5 border border-white/5 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                <Coins size={14} /> ACQUIRE STARFIGHTER · {previewShip.cost}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {UPGRADES_CONFIG.map(upg => {
+                      const currentLvl = upgrades[upg.key] || 0;
+                      const isMaxed = currentLvl >= 5;
+                      const nextCost = UPGRADE_COSTS[currentLvl];
+                      const canAfford = coins >= nextCost;
+                      return (
+                        <div key={upg.key} className="glass-card p-6 border-l-4 border-l-yellow-500/40 flex justify-between items-center bg-white/2">
+                          <div className="flex gap-4 items-start flex-1 mr-4">
+                            <div className="p-4 rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center">
+                              {upg.icon}
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-black uppercase tracking-tight text-lg text-white">{upg.name}</h4>
+                              <p className="text-[10px] text-gray-400 uppercase tracking-wide mt-0.5 leading-relaxed">{upg.desc}</p>
+                              
+                              <div className="flex gap-1.5 mt-3">
+                                {Array.from({ length: 5 }).map((_, idx) => (
+                                  <div 
+                                    key={idx} 
+                                    className={`w-6 h-3.5 rounded-md transition-all ${
+                                      idx < currentLvl 
+                                        ? 'bg-yellow-400 shadow-[0_0_8px_rgba(234,179,8,0.5)] border border-yellow-300/20' 
+                                        : 'bg-white/5 border border-white/5'
+                                    }`} 
+                                  />
+                                ))}
+                                <span className="text-[10px] font-black font-mono ml-2 text-yellow-400/80 mt-0.5">LVL {currentLvl}/5</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end justify-center min-w-[120px]">
+                            {isMaxed ? (
+                              <span className="text-[10px] font-black uppercase text-green-400 border border-green-500/20 bg-green-500/10 px-4 py-2.5 rounded-xl tracking-wider">MAX LEVEL</span>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  if (canAfford) {
+                                    setCoins(prev => prev - nextCost);
+                                    setUpgrades(prev => ({
+                                      ...prev,
+                                      [upg.key]: currentLvl + 1
+                                    }));
+                                  }
+                                }}
+                                disabled={!canAfford}
+                                className={`px-5 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-colors flex flex-col items-center gap-0.5 ${
+                                  canAfford
+                                    ? 'bg-yellow-400 hover:bg-yellow-500 text-black shadow-[0_0_15px_rgba(234,179,8,0.2)]'
+                                    : 'bg-white/5 border border-white/5 text-gray-500 cursor-not-allowed'
+                                }`}
+                              >
+                                <span>UPGRADE</span>
+                                <span className="text-[9px] font-mono opacity-80">{nextCost} CR</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="pt-4 border-t border-white/10 flex justify-end flex-shrink-0">
+                <button onClick={() => setGameState('LANDING')} className="btn-primary py-3.5 px-8 text-xs font-black uppercase rounded-xl flex items-center gap-2"><Check size={16} /> Back to CommandCenter</button>
               </div>
             </div>
           </motion.div>
